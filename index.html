@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" id="mainHtml">
 <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Postman-подобный клиент (Tailwind)</title>
+    <title id="pageTitle">Postman-подобный клиент (Tailwind)</title>
     <!-- Tailwind CSS через CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -39,9 +39,24 @@
             align-items: center;
             justify-content: center;
         }
+
+        .language-selector {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 100;
+        }
     </style>
 </head>
 <body class="bg-gray-100 h-screen flex flex-col font-sans">
+
+<!-- Языковой переключатель -->
+<div class="language-selector">
+    <select id="languageSelect" class="px-2 py-1 border border-gray-300 rounded text-sm">
+        <option value="ru">RU</option>
+        <option value="en">EN</option>
+    </select>
+</div>
 
 <!-- Контейнер табов -->
 <div id="tabsContainer" class="flex bg-gray-200 border-b border-gray-300 px-1 overflow-x-auto whitespace-nowrap_"></div>
@@ -50,6 +65,130 @@
     const STORAGE_KEY = 'postman_tabs_v3';
     const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
     const BODY_METHODS = ['POST', 'PUT', 'PATCH'];
+
+    // Объект с переводами
+    const TRANSLATIONS = {
+        ru: {
+            pageTitle: "Postman-подобный клиент (Tailwind)",
+            newTabName: "Новый запрос",
+            unnamed: "Без названия",
+            urlPlaceholder: "URL",
+            addHeaderBtn: "+ Добавить заголовок",
+            executeRequestBtn: "Выполнить запрос",
+            requestResults: "Результаты запроса",
+            settingsTitle: "Настройки",
+            baseHostLabel: "Базовый URL (хост)",
+            baseHostPlaceholder: "https://api.example.com",
+            useBaseHostLabel: "Использовать базовый URL при выполнении запросов",
+            cancelBtn: "Отмена",
+            saveBtn: "Сохранить",
+            settingsSaved: "Настройки сохранены!",
+            exportBtn: "Экспорт",
+            importBtn: "Импорт",
+            settingsBtn: "Настройки",
+            addTabTooltip: "Добавить новый таб",
+            exportTooltip: "Экспорт всех табов",
+            importTooltip: "Импортировать табы",
+            settingsTooltip: "Настройки приложения",
+            headersLabel: "Заголовки (Headers)",
+            bodyLabel: "Тело запроса (Body)",
+            resultsLoading: "Загрузка...",
+            requestError: "Ошибка выполнения запроса",
+            responseHeaders: "Заголовки ответа:",
+            responseBody: "Тело ответа:",
+            responseStatus: "Статус: ",
+            timestamp: "Время: ",
+            confirmImport: "Вы уверены, что хотите заменить все текущие табы?\nБудет импортировано %d табов.%s",
+            importSuccess: "Успешно импортировано %d табов!%s",
+            importInvalidFormat: "Файл содержит некорректные данные. Ожидается массив табов или объект с полями tabs и settings.",
+            importError: "Ошибка при чтении файла. Возможно, файл поврежден или имеет неверный формат.",
+            noTabsToImport: "Файл содержит некорректные данные. Ожидается массив табов.",
+            close: "Закрыть",
+            minimize: "[-]",
+            maximize: "[+]",
+            emptyKeyPlaceholder: "Ключ",
+            emptyValuePlaceholder: "Значение"
+        },
+        en: {
+            pageTitle: "Postman-like client (Tailwind)",
+            newTabName: "New Request",
+            unnamed: "Untitled",
+            urlPlaceholder: "URL",
+            addHeaderBtn: "+ Add Header",
+            executeRequestBtn: "Execute Request",
+            requestResults: "Request Results",
+            settingsTitle: "Settings",
+            baseHostLabel: "Base URL (host)",
+            baseHostPlaceholder: "https://api.example.com",
+            useBaseHostLabel: "Use Base URL when executing requests",
+            cancelBtn: "Cancel",
+            saveBtn: "Save",
+            settingsSaved: "Settings saved!",
+            exportBtn: "Export",
+            importBtn: "Import",
+            settingsBtn: "Settings",
+            addTabTooltip: "Add new tab",
+            exportTooltip: "Export all tabs",
+            importTooltip: "Import tabs",
+            settingsTooltip: "Application settings",
+            headersLabel: "Headers",
+            bodyLabel: "Request Body",
+            resultsLoading: "Loading...",
+            requestError: "Request execution error",
+            responseHeaders: "Response Headers:",
+            responseBody: "Response Body:",
+            responseStatus: "Status: ",
+            timestamp: "Time: ",
+            confirmImport: "Are you sure you want to replace all current tabs?\n%d tabs will be imported.%s",
+            importSuccess: "Successfully imported %d tabs!%s",
+            importInvalidFormat: "File contains invalid data. Expected an array of tabs or an object with tabs and settings fields.",
+            importError: "Error reading file. The file may be corrupted or in an incorrect format.",
+            noTabsToImport: "File contains invalid data. Expected an array of tabs.",
+            close: "Close",
+            minimize: "[-]",
+            maximize: "[+]",
+            emptyKeyPlaceholder: "Key",
+            emptyValuePlaceholder: "Value"
+        }
+    };
+
+    // Текущий язык
+    let currentLanguage = localStorage.getItem('app_language') || 'ru';
+
+    // Обновляем атрибут языка HTML сразу при загрузке
+    document.documentElement.lang = currentLanguage;
+
+    // Функция получения перевода
+    function t(key) {
+        const translation = TRANSLATIONS[currentLanguage][key];
+        return translation !== undefined ? translation : key;
+    }
+
+    // Функция обновления интерфейса после смены языка
+    function updateLanguage() {
+        // Обновляем заголовок страницы
+        document.getElementById('pageTitle').textContent = t('pageTitle');
+
+        // Обновляем атрибут языка HTML
+        document.documentElement.lang = currentLanguage;
+
+        // Обновляем все открытые табы
+        tabs.forEach(tab => {
+            renderTabContentFresh(tab.id, true); // Обновляем без активации
+        });
+
+        // Обновляем кнопки в верхней панели (если они уже созданы)
+        const exportBtn = document.querySelector('#tabsContainer button:nth-last-child(3)');
+        const importBtn = document.querySelector('#tabsContainer button:nth-last-child(2)');
+        const settingsBtn = document.querySelector('#tabsContainer button:last-child');
+
+        if (exportBtn) exportBtn.textContent = t('exportBtn');
+        if (importBtn) importBtn.textContent = t('importBtn');
+        if (settingsBtn) settingsBtn.textContent = t('settingsBtn');
+
+        // Сохраняем язык
+        localStorage.setItem('app_language', currentLanguage);
+    }
 
     let tabs = [];
     let currentTabId = null;
@@ -89,7 +228,7 @@
     }
 
     // === Создание таба ===
-    function createNewTab(name = 'Новый запрос') {
+    function createNewTab(name = t('newTabName')) {
         const newTab = {
             id: nextId++,
             name,
@@ -145,7 +284,7 @@
         });
         input.addEventListener('blur', () => {
             input.readOnly = true;
-            const newName = input.value.trim() || 'Без названия';
+            const newName = input.value.trim() || t('unnamed');
             updateTabData(tabData.id, {name: newName});
             input.value = newName;
         });
@@ -199,20 +338,20 @@
         <select id="method-${tabData.id}" class="px-3 py-2 border border-gray-300 rounded w-24">
           ${METHODS.map(m => `<option ${m === tabData.method ? 'selected' : ''}>${m}</option>`).join('')}
         </select>
-        <input type="text" id="url-${tabData.id}" value="${tabData.url}" placeholder="URL" class="flex-1 px-3 py-2 border border-gray-300 rounded" />
+        <input type="text" id="url-${tabData.id}" value="${tabData.url}" placeholder="${t('urlPlaceholder')}" class="flex-1 px-3 py-2 border border-gray-300 rounded" />
       `;
 
         // Заголовки
         const headersGroup = document.createElement('div');
         headersGroup.className = 'mb-4';
-        headersGroup.innerHTML = `<label class="block font-bold text-sm mb-2">Заголовки (Headers)</label><div id="headers-list-${tabData.id}" class="space-y-2 mb-2"></div>`;
+        headersGroup.innerHTML = `<label class="block font-bold text-sm mb-2">${t('headersLabel')}</label><div id="headers-list-${tabData.id}" class="space-y-2 mb-2"></div>`;
 
         const headersList = headersGroup.querySelector(`#headers-list-${tabData.id}`);
         renderHeaders(headersList, tabData.headers, tabData.id);
 
         const addHeaderBtn = document.createElement('button');
         addHeaderBtn.className = 'px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600';
-        addHeaderBtn.textContent = '+ Добавить заголовок';
+        addHeaderBtn.textContent = t('addHeaderBtn');
         addHeaderBtn.addEventListener('click', () => {
             const newHeaders = [...tabData.headers, {key: '', value: ''}];
             updateTabData(tabData.id, {headers: newHeaders});
@@ -224,14 +363,14 @@
         const bodyGroup = document.createElement('div');
         bodyGroup.className = 'mb-4';
         bodyGroup.innerHTML = `
-        <label class="block font-bold text-sm mb-2">Тело запроса (Body)</label>
+        <label class="block font-bold text-sm mb-2">${t('bodyLabel')}</label>
         <textarea id="body-${tabData.id}" ${!isBodyAllowed ? 'disabled' : ''} class="w-full px-3 py-2 border ${isBodyAllowed ? 'border-gray-300' : 'border-gray-200 bg-gray-100'} rounded font-mono min-h-[120px]">${tabData.body}</textarea>
       `;
 
         // Кнопка выполнить запрос
         const executeBtn = document.createElement('button');
         executeBtn.className = 'px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 mb-4 mt-2';
-        executeBtn.textContent = 'Выполнить запрос';
+        executeBtn.textContent = t('executeRequestBtn');
         executeBtn.addEventListener('click', () => {
             executeRequest(tabData.id);
         });
@@ -251,15 +390,15 @@
         const resultsHeader = document.createElement('div');
         resultsHeader.className = 'p-3 bg-gray-100 border-b border-gray-300 flex justify-between items-center';
         resultsHeader.innerHTML = `
-            <h3 class="font-bold">Результаты запроса</h3>
-            <button id="toggle-results-${tabData.id}" class="text-gray-500 hover:text-gray-700">[-]</button>
+            <h3 class="font-bold">${t('requestResults')}</h3>
+            <button id="toggle-results-${tabData.id}" class="text-gray-500 hover:text-gray-700">${t('minimize')}</button>
         `;
 
         // Кнопка переключения видимости сайдбара
         const toggleBtn = resultsHeader.querySelector(`#toggle-results-${tabData.id}`);
         toggleBtn.addEventListener('click', () => {
             resultsPanel.classList.toggle('hidden');
-            toggleBtn.textContent = resultsPanel.classList.contains('hidden') ? '[+]' : '[-]';
+            toggleBtn.textContent = resultsPanel.classList.contains('hidden') ? t('maximize') : t('minimize');
         });
 
         // Контейнер для результатов
@@ -314,8 +453,8 @@
             const row = document.createElement('div');
             row.className = 'flex gap-2';
             row.innerHTML = `
-          <input type="text" placeholder="Ключ" value="${header.key}" class="flex-1 px-2 py-1 border border-gray-300 rounded text-sm" />
-                    <input type="text" placeholder="Значение" value="${header.value}" class="flex-1 px-2 py-1 border border-gray-300 rounded text-sm" />
+          <input type="text" placeholder="${t('emptyKeyPlaceholder')}" value="${header.key}" class="flex-1 px-2 py-1 border border-gray-300 rounded text-sm" />
+                    <input type="text" placeholder="${t('emptyValuePlaceholder')}" value="${header.value}" class="flex-1 px-2 py-1 border border-gray-300 rounded text-sm" />
           <button class="w-7 h-7 flex items-center justify-center bg-red-100 text-red-500 rounded hover:bg-red-200 text-sm">×</button>
         `;
 
@@ -344,7 +483,7 @@
     }
 
     // === Перерисовка контента таба ===
-    function renderTabContentFresh(tabId) {
+    function renderTabContentFresh(tabId, updateWithoutActivate = false) {
         const oldContent = document.querySelector(`.tab-content[data-id="${tabId}"]`);
         if (oldContent) oldContent.remove();
         const tabData = tabs.find(t => t.id === tabId);
@@ -352,7 +491,7 @@
         console.log(tabData);
         if (tabData) {
             renderTabContent(tabData);
-            if (currentTabId === tabId) {
+            if (currentTabId === tabId && !updateWithoutActivate) {
                 activateTab(tabId);
             }
         }
@@ -360,35 +499,44 @@
 
     // === Инициализация приложения ===
     function init() {
+        // Устанавливаем начальный язык в выпадающем списке
+        document.getElementById('languageSelect').value = currentLanguage;
+
+        // Добавляем обработчик события для переключения языка
+        document.getElementById('languageSelect').addEventListener('change', function() {
+            currentLanguage = this.value;
+            updateLanguage();
+        });
+
         // Кнопка "+" для добавления таба
         const addButton = document.createElement('button');
         addButton.className = 'px-3 py-2 text-xl text-gray-600 hover:bg-gray-300 rounded';
         addButton.textContent = '+';
-        addButton.title = 'Добавить новый таб';
+        addButton.title = t('addTabTooltip');
         addButton.addEventListener('click', () => createNewTab());
         document.querySelector('#tabsContainer').appendChild(addButton);
 
         // Кнопка экспорта
         const exportButton = document.createElement('button');
         exportButton.className = 'px-3 py-2 ml-2 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
-        exportButton.textContent = 'Экспорт';
-        exportButton.title = 'Экспортировать все табы';
+        exportButton.textContent = t('exportBtn');
+        exportButton.title = t('exportTooltip');
         exportButton.addEventListener('click', exportTabs);
         document.querySelector('#tabsContainer').appendChild(exportButton);
 
         // Кнопка импорта
         const importButton = document.createElement('button');
         importButton.className = 'px-3 py-2 ml-1 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
-        importButton.textContent = 'Импорт';
-        importButton.title = 'Импортировать табы';
+        importButton.textContent = t('importBtn');
+        importButton.title = t('importTooltip');
         importButton.addEventListener('click', importTabs);
         document.querySelector('#tabsContainer').appendChild(importButton);
 
         // Кнопка настроек
         const settingsButton = document.createElement('button');
         settingsButton.className = 'px-3 py-2 ml-1 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
-        settingsButton.textContent = 'Настройки';
-        settingsButton.title = 'Настройки приложения';
+        settingsButton.textContent = t('settingsBtn');
+        settingsButton.title = t('settingsTooltip');
         settingsButton.addEventListener('click', showSettings);
         document.querySelector('#tabsContainer').appendChild(settingsButton);
 
@@ -408,23 +556,23 @@
         settingsContent.className = 'bg-white p-6 rounded-lg shadow-lg w-96 max-w-full mx-4';
         settingsContent.innerHTML = `
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-bold">Настройки</h2>
+                <h2 class="text-xl font-bold">${t('settingsTitle')}</h2>
                 <button id="close-settings" class="text-gray-500 hover:text-gray-700">&times;</button>
             </div>
             <div class="mb-4">
-                <label class="block font-bold text-sm mb-2">Базовый URL (хост)</label>
-                <input type="text" id="base-host-input" placeholder="https://api.example.com" class="w-full px-3 py-2 border border-gray-300 rounded" />
+                <label class="block font-bold text-sm mb-2">${t('baseHostLabel')}</label>
+                <input type="text" id="base-host-input" placeholder="${t('baseHostPlaceholder')}" class="w-full px-3 py-2 border border-gray-300 rounded" />
                 <p class="text-xs text-gray-500 mt-1">Если указан, будет добавлен к началу всех URL запросов</p>
             </div>
             <div class="mb-4">
                 <label class="flex items-center">
                     <input type="checkbox" id="use-base-host-checkbox" class="mr-2" />
-                    <span class="text-sm">Использовать базовый URL при выполнении запросов</span>
+                    <span class="text-sm">${t('useBaseHostLabel')}</span>
                 </label>
             </div>
             <div class="flex justify-end space-x-2">
-                <button id="cancel-settings" class="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100">Отмена</button>
-                <button id="save-settings" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">Сохранить</button>
+                <button id="cancel-settings" class="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100">${t('cancelBtn')}</button>
+                <button id="save-settings" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">${t('saveBtn')}</button>
             </div>
         `;
 
@@ -436,9 +584,29 @@
         document.getElementById('base-host-input').value = settings.baseHost || '';
         document.getElementById('use-base-host-checkbox').checked = settings.useBaseHost;
 
+        // Обработчик нажатия клавиши ESC
+        function handleEscKey(event) {
+            if (event.key === 'Escape') {
+                closeSettingsModal();
+            }
+        }
+
+        // Функция закрытия модального окна
+        function closeSettingsModal() {
+            // Удаляем обработчик клавиатуры
+            document.removeEventListener('keydown', handleEscKey);
+            closeModal(modal);
+        }
+
         // Обработчики кнопок
-        document.getElementById('close-settings').addEventListener('click', () => closeModal(modal));
-        document.getElementById('cancel-settings').addEventListener('click', () => closeModal(modal));
+        document.getElementById('close-settings').addEventListener('click', closeSettingsModal);
+        document.getElementById('cancel-settings').addEventListener('click', closeSettingsModal);
+
+        // Сохраняем обработчик в глобальную переменную для использования в closeModal
+        window.settingsEscHandler = handleEscKey;
+
+        // Добавляем обработчик клавиатуры
+        document.addEventListener('keydown', handleEscKey);
 
         document.getElementById('save-settings').addEventListener('click', () => {
             const baseHost = document.getElementById('base-host-input').value.trim();
@@ -448,9 +616,9 @@
             saveSettings({ baseHost, useBaseHost });
 
             // Закрываем модальное окно
-            closeModal(modal);
+            closeSettingsModal();
 
-            alert('Настройки сохранены!');
+            alert(t('settingsSaved'));
         });
     }
 
@@ -475,6 +643,8 @@
 
     // === Закрытие модального окна ===
     function closeModal(modal) {
+        // Удаляем обработчик клавиатуры при закрытии модального окна
+        document.removeEventListener('keydown', window.settingsEscHandler);
         document.body.removeChild(modal);
     }
 
@@ -550,22 +720,23 @@
                         importedSettings = importedData.settings || null;
                     } else {
                         // Неизвестный формат
-                        alert('Файл содержит некорректные данные. Ожидается массив табов или объект с полями tabs и settings.');
+                        alert(t('importInvalidFormat'));
                         return;
                     }
 
                     // Валидация формата данных
                     if (!Array.isArray(importedTabs)) {
-                        alert('Файл содержит некорректные данные. Ожидается массив табов.');
+                        alert(t('noTabsToImport'));
                         return;
                     }
 
                     // Подтверждение перед импортом
-                    const confirmed = confirm(
-                        `Вы уверены, что хотите заменить все текущие табы?\n` +
-                        `Будет импортировано ${importedTabs.length} табов.` +
-                        (importedSettings ? ' Настройки также будут восстановлены.' : '')
-                    );
+                    const settingsText = importedSettings ? t('confirmImport').includes('%s') ? ' ' + t('importSuccess').split('%d')[1].split('%s')[0] : '' : '';
+                    const confirmMessage = t('confirmImport')
+                        .replace('%d', importedTabs.length)
+                        .replace('%s', settingsText);
+
+                    const confirmed = confirm(confirmMessage);
 
                     if (confirmed) {
                         // Заменяем существующие табы на импортированные
@@ -601,12 +772,14 @@
                         // Сохраняем в localStorage
                         saveToStorage();
 
-                        alert(`Успешно импортировано ${importedTabs.length} табов!` +
-                              (importedSettings ? ' Настройки восстановлены.' : ''));
+                        const successMessage = t('importSuccess')
+                            .replace('%d', importedTabs.length)
+                            .replace('%s', settingsText ? ' ' + t('importSuccess').split('%d')[1].split('%s')[0] : '');
+                        alert(successMessage);
                     }
                 } catch (error) {
                     console.error('Ошибка при импорте:', error);
-                    alert('Ошибка при чтении файла. Возможно, файл поврежден или имеет неверный формат.');
+                    alert(t('importError'));
                 }
             };
             reader.readAsText(file);
@@ -630,7 +803,7 @@
         }
 
         // Показываем индикатор загрузки
-        updateResultsDisplay(tabId, '<div class="text-blue-500">Загрузка...</div>', 'loading');
+        updateResultsDisplay(tabId, `<div class="text-blue-500">${t('resultsLoading')}</div>`, 'loading');
 
         try {
             // Подготовка заголовков
@@ -711,13 +884,13 @@
         let displayContent = '';
 
         if (status === 'loading') {
-            displayContent = result; // Просто текст загрузки
+            displayContent = `<div class="text-blue-500">${t('resultsLoading')}</div>`; // Use loading text from translations
         } else if (result.error) {
             displayContent = `
                 <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-                    <h3 class="font-bold">Ошибка выполнения запроса</h3>
+                    <h3 class="font-bold">${t('requestError')}</h3>
                     <p>${result.message}</p>
-                    <p class="text-xs mt-1">Время: ${result.timestamp}</p>
+                    <p class="text-xs mt-1">${t('timestamp')} ${result.timestamp}</p>
                 </div>
             `;
         } else {
@@ -725,17 +898,17 @@
             displayContent = `
                 <div class="mb-4">
                     <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
-                        <h3 class="font-bold">Статус: ${result.statusCode} ${result.statusText}</h3>
-                        <p class="text-xs">Время: ${result.timestamp}</p>
+                        <h3 class="font-bold">${t('responseStatus')}${result.statusCode} ${result.statusText}</h3>
+                        <p class="text-xs">${t('timestamp')} ${result.timestamp}</p>
                     </div>
 
-                    <h4 class="font-bold mb-2">Заголовки ответа:</h4>
+                    <h4 class="font-bold mb-2">${t('responseHeaders')}</h4>
                     <div class="overflow-x-auto max-h-40 overflow-y-auto mb-4 border rounded">
                         <table class="min-w-full divide-y divide-gray-200 text-sm">
                             <thead class="bg-gray-50">
                                 <tr>
-                                    <th class="px-3 py-2 text-left">Имя</th>
-                                    <th class="px-3 py-2 text-left">Значение</th>
+                                    <th class="px-3 py-2 text-left">${t('emptyKeyPlaceholder')}</th>
+                                    <th class="px-3 py-2 text-left">${t('emptyValuePlaceholder')}</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-200">
@@ -749,7 +922,7 @@
                         </table>
                     </div>
 
-                    <h4 class="font-bold mb-2">Тело ответа:</h4>
+                    <h4 class="font-bold mb-2">${t('responseBody')}</h4>
                     <pre class="bg-gray-100 p-4 rounded border max-h-96 overflow-y-auto whitespace-pre-wrap font-mono text-sm">${formatResponseBody(result.body)}</pre>
                 </div>
             `;
@@ -772,37 +945,45 @@
 
     // === Инициализация приложения ===
     function init() {
-        // Кнопка "+" для добавления таба
-        const addButton = document.createElement('button');
-        addButton.className = 'px-3 py-2 text-xl text-gray-600 hover:bg-gray-300 rounded';
-        addButton.textContent = '+';
-        addButton.title = 'Добавить новый таб';
-        addButton.addEventListener('click', () => createNewTab());
-        document.querySelector('#tabsContainer').appendChild(addButton);
+        // Устанавливаем начальный язык в выпадающем списке
+        document.getElementById('languageSelect').value = currentLanguage;
+
+        // Добавляем обработчик события для переключения языка
+        document.getElementById('languageSelect').addEventListener('change', function() {
+            currentLanguage = this.value;
+            updateLanguage();
+        });
 
         // Кнопка экспорта
         const exportButton = document.createElement('button');
         exportButton.className = 'px-3 py-2 ml-2 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
-        exportButton.textContent = 'Экспорт';
-        exportButton.title = 'Экспортировать все табы';
+        exportButton.textContent = t('exportBtn');
+        exportButton.title = t('exportTooltip');
         exportButton.addEventListener('click', exportTabs);
         document.querySelector('#tabsContainer').appendChild(exportButton);
 
         // Кнопка импорта
         const importButton = document.createElement('button');
         importButton.className = 'px-3 py-2 ml-1 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
-        importButton.textContent = 'Импорт';
-        importButton.title = 'Импортировать табы';
+        importButton.textContent = t('importBtn');
+        importButton.title = t('importTooltip');
         importButton.addEventListener('click', importTabs);
         document.querySelector('#tabsContainer').appendChild(importButton);
 
         // Кнопка настроек
         const settingsButton = document.createElement('button');
         settingsButton.className = 'px-3 py-2 ml-1 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
-        settingsButton.textContent = 'Настройки';
-        settingsButton.title = 'Настройки приложения';
+        settingsButton.textContent = t('settingsBtn');
+        settingsButton.title = t('settingsTooltip');
         settingsButton.addEventListener('click', showSettings);
         document.querySelector('#tabsContainer').appendChild(settingsButton);
+        // Кнопка "+" для добавления таба
+        const addButton = document.createElement('button');
+        addButton.className = 'px-3 py-2 text-xl text-gray-600 hover:bg-gray-300 rounded';
+        addButton.textContent = '+';
+        addButton.title = t('addTabTooltip');
+        addButton.addEventListener('click', () => createNewTab());
+        document.querySelector('#tabsContainer').appendChild(addButton);
 
         // Загрузка данных
         loadFromStorage();
