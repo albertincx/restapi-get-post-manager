@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Postman-подобный клиент (Tailwind)</title>
+    <!-- Tailwind CSS через CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Опционально: кастомные настройки Tailwind
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'tab-bg': '#f1f5f9',
+                        'tab-border': '#cbd5e1',
+                        'tab-active': '#e2e8f0',
+                    }
+                }
+            }
+        };
+    </script>
+    <style>
+        /* Маленький хак: input внутри таба не должен сжиматься */
+        .tab-input {
+            /*min-width: 50px;*/
+            /*width: 100px;*/
+        }
+        input {
+            width: 100px;
+        }
+
+        /* Кнопка закрытия — круглая */
+        .close-btn {
+            width: 18px;
+            height: 18px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 h-screen flex flex-col font-sans">
+
+<!-- Контейнер табов -->
+<div id="tabsContainer" class="flex bg-gray-200 border-b border-gray-300 px-1 overflow-x-auto whitespace-nowrap_"></div>
+
+<script>
+    const STORAGE_KEY = 'postman_tabs_v3';
+    const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
+    const BODY_METHODS = ['POST', 'PUT', 'PATCH'];
+
+    let tabs = [];
+    let currentTabId = null;
+    let nextId = 1;
+
+    // === Утилиты ===
+    const debounce = (func, wait) => {
+        let timeout;
+        return (...args) => {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func(...args), wait);
+        };
+    };
+
+    // === localStorage ===
+    function saveToStorage() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(tabs));
+    }
+
+    function loadFromStorage() {
+        const data = localStorage.getItem(STORAGE_KEY);
+        if (data) {
+            try {
+                tabs = JSON.parse(data);
+                if (tabs.length > 0) {
+                    nextId = Math.max(...tabs.map(t => t.id)) + 1;
+                    tabs.forEach(tab => renderTabUI(tab));
+                    activateTab(tabs[0].id);
+                    renderTabContentFresh(tabs[0].id);
+                    return;
+                }
+            } catch (e) {
+                console.error('Ошибка загрузки из localStorage', e);
+            }
+        }
+        createNewTab();
+    }
+
+    // === Создание таба ===
+    function createNewTab(name = 'Новый запрос') {
+        const newTab = {
+            id: nextId++,
+            name,
+            url: 'https://httpbin.org/get',
+            method: 'GET',
+            headers: [{key: '', value: ''}],
+            body: '',
+            lastResult: null
+        };
+        tabs.push(newTab);
+        console.log('aaa',newTab)
+        renderTabUI(newTab);
+        activateTab(newTab.id);
+        saveToStorage();
+    }
+
+    // === Удаление таба ===
+    function removeTab(id) {
+        if (tabs.length <= 1) return;
+        tabs = tabs.filter(t => t.id !== id);
+        document.querySelector(`.tab[data-id="${id}"]`)?.remove();
+        document.querySelector(`.tab-content[data-id="${id}"]`)?.remove();
+
+        const nextId = tabs[0]?.id;
+        if (nextId !== undefined) activateTab(nextId);
+        saveToStorage();
+    }
+
+    // === Обновление данных таба ===
+    function updateTabData(id, updates) {
+        const tab = tabs.find(t => t.id === id);
+        if (tab) {
+            Object.assign(tab, updates);
+            saveToStorage();
+        }
+    }
+
+    // === Рендер UI таба (верхняя панель) ===
+    function renderTabUI(tabData) {
+        const tabEl = document.createElement('div');
+        tabEl.className = `tab px-3 py-2 bg-white border border-gray-300 rounded-t-md mr-1 relative cursor-pointer ${currentTabId === tabData.id ? 'bg-gray-50 font-bold' : ''}`;
+        tabEl.dataset.id = tabData.id;
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = tabData.name;
+        input.className = 'tab-input bg-transparent border-none outline-none font-inherit';
+        input.readOnly = true;
+
+        input.addEventListener('dblclick', () => {
+            input.readOnly = false;
+            input.focus();
+        });
+        input.addEventListener('blur', () => {
+            input.readOnly = true;
+            const newName = input.value.trim() || 'Без названия';
+            updateTabData(tabData.id, {name: newName});
+            input.value = newName;
+        });
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') input.blur();
+        });
+
+        const closeButton = document.createElement('button');
+        closeButton.className = 'close-btn absolute -top-1 -right-1 bg-red-100 text-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity';
+        closeButton.innerHTML = '×';
+        closeButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            removeTab(tabData.id);
+        });
+
+        tabEl.classList.add('group');
+        tabEl.appendChild(input);
+        tabEl.appendChild(closeButton);
+        tabEl.addEventListener('click', () => activateTab(tabData.id));
+
+        document.querySelector('#tabsContainer').appendChild(tabEl);
+        renderTabContentFresh(tabData.id);
+    }
+
+    // === Активация таба ===
+    function activateTab(id) {
+        currentTabId = id;
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('bg-gray-50', 'font-bold'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+
+        const tabEl = document.querySelector(`.tab[data-id="${id}"]`);
+        const contentEl = document.querySelector(`.tab-content[data-id="${id}"]`);
+        if (tabEl) tabEl.classList.add('bg-gray-50', 'font-bold');
+        if (contentEl) contentEl.classList.remove('hidden');
+    }
+
+    // === Рендер контента таба ===
+    function renderTabContent(tabData) {
+        const content = document.createElement('div');
+        content.className = 'tab-content hidden flex flex-row bg-white overflow-hidden';
+        content.dataset.id = tabData.id;
+
+        // Основная панель запроса
+        const requestPanel = document.createElement('div');
+        requestPanel.className = 'flex-1 flex-col overflow-y-auto p-4';
+
+        // Метод + URL
+        const methodUrlGroup = document.createElement('div');
+        methodUrlGroup.className = 'flex gap-2 mb-4';
+        methodUrlGroup.innerHTML = `
+        <select id="method-${tabData.id}" class="px-3 py-2 border border-gray-300 rounded w-24">
+          ${METHODS.map(m => `<option ${m === tabData.method ? 'selected' : ''}>${m}</option>`).join('')}
+        </select>
+        <input type="text" id="url-${tabData.id}" value="${tabData.url}" placeholder="URL" class="flex-1 px-3 py-2 border border-gray-300 rounded" />
+      `;
+
+        // Заголовки
+        const headersGroup = document.createElement('div');
+        headersGroup.className = 'mb-4';
+        headersGroup.innerHTML = `<label class="block font-bold text-sm mb-2">Заголовки (Headers)</label><div id="headers-list-${tabData.id}" class="space-y-2 mb-2"></div>`;
+
+        const headersList = headersGroup.querySelector(`#headers-list-${tabData.id}`);
+        renderHeaders(headersList, tabData.headers, tabData.id);
+
+        const addHeaderBtn = document.createElement('button');
+        addHeaderBtn.className = 'px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600';
+        addHeaderBtn.textContent = '+ Добавить заголовок';
+        addHeaderBtn.addEventListener('click', () => {
+            const newHeaders = [...tabData.headers, {key: '', value: ''}];
+            updateTabData(tabData.id, {headers: newHeaders});
+            renderTabContentFresh(tabData.id);
+        });
+
+        // Тело запроса
+        const isBodyAllowed = BODY_METHODS.includes(tabData.method);
+        const bodyGroup = document.createElement('div');
+        bodyGroup.className = 'mb-4';
+        bodyGroup.innerHTML = `
+        <label class="block font-bold text-sm mb-2">Тело запроса (Body)</label>
+        <textarea id="body-${tabData.id}" ${!isBodyAllowed ? 'disabled' : ''} class="w-full px-3 py-2 border ${isBodyAllowed ? 'border-gray-300' : 'border-gray-200 bg-gray-100'} rounded font-mono min-h-[120px]">${tabData.body}</textarea>
+      `;
+
+        // Кнопка выполнить запрос
+        const executeBtn = document.createElement('button');
+        executeBtn.className = 'px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 mb-4 mt-2';
+        executeBtn.textContent = 'Выполнить запрос';
+        executeBtn.addEventListener('click', () => {
+            executeRequest(tabData.id);
+        });
+
+        requestPanel.appendChild(methodUrlGroup);
+        requestPanel.appendChild(headersGroup);
+        requestPanel.appendChild(addHeaderBtn);
+        requestPanel.appendChild(bodyGroup);
+        requestPanel.appendChild(executeBtn);
+
+        // Панель с результатами (сайдбар)
+        const resultsPanel = document.createElement('div');
+        resultsPanel.id = `results-sidebar-${tabData.id}`;
+        resultsPanel.className = 'w-1/3 border-l border-gray-300 bg-gray-50 overflow-y-auto hidden';
+
+        // Заголовок панели результатов
+        const resultsHeader = document.createElement('div');
+        resultsHeader.className = 'p-3 bg-gray-100 border-b border-gray-300 flex justify-between items-center';
+        resultsHeader.innerHTML = `
+            <h3 class="font-bold">Результаты запроса</h3>
+            <button id="toggle-results-${tabData.id}" class="text-gray-500 hover:text-gray-700">[-]</button>
+        `;
+
+        // Кнопка переключения видимости сайдбара
+        const toggleBtn = resultsHeader.querySelector(`#toggle-results-${tabData.id}`);
+        toggleBtn.addEventListener('click', () => {
+            resultsPanel.classList.toggle('hidden');
+            toggleBtn.textContent = resultsPanel.classList.contains('hidden') ? '[+]' : '[-]';
+        });
+
+        // Контейнер для результатов
+        const resultsContainer = document.createElement('div');
+        resultsContainer.id = `results-container-${tabData.id}`;
+        resultsContainer.className = 'p-4';
+
+        // Восстанавливаем предыдущий результат, если он был
+        if (tabData.lastResult) {
+            updateResultsDisplay(tabData.id, tabData.lastResult, tabData.lastResult.error ? 'error' : 'success');
+        }
+
+        resultsPanel.appendChild(resultsHeader);
+        resultsPanel.appendChild(resultsContainer);
+
+        content.appendChild(requestPanel);
+        content.appendChild(resultsPanel);
+
+        // Обработчики
+        const methodSelect = requestPanel.querySelector(`#method-${tabData.id}`);
+        const urlInput = requestPanel.querySelector(`#url-${tabData.id}`);
+        const bodyTextarea = requestPanel.querySelector(`#body-${tabData.id}`);
+
+        methodSelect.addEventListener('change', (e) => {
+            updateTabData(tabData.id, {method: e.target.value});
+            const allowed = BODY_METHODS.includes(e.target.value);
+            bodyTextarea.disabled = !allowed;
+            bodyTextarea.classList.toggle('bg-gray-100', !allowed);
+            bodyTextarea.classList.toggle('border-gray-200', !allowed);
+            bodyTextarea.classList.toggle('border-gray-300', allowed);
+            if (!allowed) {
+                bodyTextarea.value = '';
+                updateTabData(tabData.id, {body: ''});
+            }
+        });
+
+        urlInput.addEventListener('input', debounce((e) => {
+            updateTabData(tabData.id, {url: e.target.value});
+        }, 300));
+
+        bodyTextarea.addEventListener('input', debounce((e) => {
+            updateTabData(tabData.id, {body: e.target.value});
+        }, 300));
+
+        document.body.appendChild(content);
+    }
+
+    // === Рендер заголовков ===
+    function renderHeaders(container, headers, tabId) {
+        container.innerHTML = '';
+        headers.forEach((header, index) => {
+            const row = document.createElement('div');
+            row.className = 'flex gap-2';
+            row.innerHTML = `
+          <input type="text" placeholder="Ключ" value="${header.key}" class="flex-1 px-2 py-1 border border-gray-300 rounded text-sm" />
+                    <input type="text" placeholder="Значение" value="${header.value}" class="flex-1 px-2 py-1 border border-gray-300 rounded text-sm" />
+          <button class="w-7 h-7 flex items-center justify-center bg-red-100 text-red-500 rounded hover:bg-red-200 text-sm">×</button>
+        `;
+
+            const keyInput = row.querySelector('input:first-child');
+            const valueInput = row.querySelector('input:last-of-type'); // второй input
+            const removeBtn = row.querySelector('button');
+
+            keyInput.addEventListener('input', debounce((e) => {
+                headers[index].key = e.target.value;
+                updateTabData(tabId, {headers: [...headers]});
+            }, 300));
+
+            valueInput.addEventListener('input', debounce((e) => {
+                headers[index].value = e.target.value;
+                updateTabData(tabId, {headers: [...headers]});
+            }, 300));
+
+            removeBtn.addEventListener('click', () => {
+                headers.splice(index, 1);
+                updateTabData(tabId, {headers: [...headers]});
+                renderTabContentFresh(tabId);
+            });
+
+            container.appendChild(row);
+        });
+    }
+
+    // === Перерисовка контента таба ===
+    function renderTabContentFresh(tabId) {
+        const oldContent = document.querySelector(`.tab-content[data-id="${tabId}"]`);
+        if (oldContent) oldContent.remove();
+        const tabData = tabs.find(t => t.id === tabId);
+        console.log('tabData');
+        console.log(tabData);
+        if (tabData) {
+            renderTabContent(tabData);
+            if (currentTabId === tabId) {
+                activateTab(tabId);
+            }
+        }
+    }
+
+    // === Инициализация приложения ===
+    function init() {
+        // Кнопка "+" для добавления таба
+        const addButton = document.createElement('button');
+        addButton.className = 'px-3 py-2 text-xl text-gray-600 hover:bg-gray-300 rounded';
+        addButton.textContent = '+';
+        addButton.title = 'Добавить новый таб';
+        addButton.addEventListener('click', () => createNewTab());
+        document.querySelector('#tabsContainer').appendChild(addButton);
+
+        // Кнопка экспорта
+        const exportButton = document.createElement('button');
+        exportButton.className = 'px-3 py-2 ml-2 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
+        exportButton.textContent = 'Экспорт';
+        exportButton.title = 'Экспортировать все табы';
+        exportButton.addEventListener('click', exportTabs);
+        document.querySelector('#tabsContainer').appendChild(exportButton);
+
+        // Кнопка импорта
+        const importButton = document.createElement('button');
+        importButton.className = 'px-3 py-2 ml-1 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
+        importButton.textContent = 'Импорт';
+        importButton.title = 'Импортировать табы';
+        importButton.addEventListener('click', importTabs);
+        document.querySelector('#tabsContainer').appendChild(importButton);
+
+        // Кнопка настроек
+        const settingsButton = document.createElement('button');
+        settingsButton.className = 'px-3 py-2 ml-1 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
+        settingsButton.textContent = 'Настройки';
+        settingsButton.title = 'Настройки приложения';
+        settingsButton.addEventListener('click', showSettings);
+        document.querySelector('#tabsContainer').appendChild(settingsButton);
+
+        // Загрузка данных
+        loadFromStorage();
+    }
+
+    // === Управление настройками ===
+    function showSettings() {
+        // Создаем модальное окно для настроек
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+        modal.id = 'settings-modal';
+
+        // Содержимое модального окна
+        const settingsContent = document.createElement('div');
+        settingsContent.className = 'bg-white p-6 rounded-lg shadow-lg w-96 max-w-full mx-4';
+        settingsContent.innerHTML = `
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Настройки</h2>
+                <button id="close-settings" class="text-gray-500 hover:text-gray-700">&times;</button>
+            </div>
+            <div class="mb-4">
+                <label class="block font-bold text-sm mb-2">Базовый URL (хост)</label>
+                <input type="text" id="base-host-input" placeholder="https://api.example.com" class="w-full px-3 py-2 border border-gray-300 rounded" />
+                <p class="text-xs text-gray-500 mt-1">Если указан, будет добавлен к началу всех URL запросов</p>
+            </div>
+            <div class="mb-4">
+                <label class="flex items-center">
+                    <input type="checkbox" id="use-base-host-checkbox" class="mr-2" />
+                    <span class="text-sm">Использовать базовый URL при выполнении запросов</span>
+                </label>
+            </div>
+            <div class="flex justify-end space-x-2">
+                <button id="cancel-settings" class="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100">Отмена</button>
+                <button id="save-settings" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">Сохранить</button>
+            </div>
+        `;
+
+        modal.appendChild(settingsContent);
+        document.body.appendChild(modal);
+
+        // Загружаем текущие настройки
+        const settings = loadSettings();
+        document.getElementById('base-host-input').value = settings.baseHost || '';
+        document.getElementById('use-base-host-checkbox').checked = settings.useBaseHost;
+
+        // Обработчики кнопок
+        document.getElementById('close-settings').addEventListener('click', () => closeModal(modal));
+        document.getElementById('cancel-settings').addEventListener('click', () => closeModal(modal));
+
+        document.getElementById('save-settings').addEventListener('click', () => {
+            const baseHost = document.getElementById('base-host-input').value.trim();
+            const useBaseHost = document.getElementById('use-base-host-checkbox').checked;
+
+            // Сохраняем настройки
+            saveSettings({ baseHost, useBaseHost });
+
+            // Закрываем модальное окно
+            closeModal(modal);
+
+            alert('Настройки сохранены!');
+        });
+    }
+
+    // === Загрузка настроек ===
+    function loadSettings() {
+        const settingsStr = localStorage.getItem('postman_settings');
+        if (settingsStr) {
+            try {
+                return JSON.parse(settingsStr);
+            } catch (e) {
+                console.error('Ошибка при загрузке настроек', e);
+                return { baseHost: '', useBaseHost: false };
+            }
+        }
+        return { baseHost: '', useBaseHost: false };
+    }
+
+    // === Сохранение настроек ===
+    function saveSettings(settings) {
+        localStorage.setItem('postman_settings', JSON.stringify(settings));
+    }
+
+    // === Закрытие модального окна ===
+    function closeModal(modal) {
+        document.body.removeChild(modal);
+    }
+
+    // === Получение финального URL с учетом настроек ===
+    function getFinalUrl(originalUrl) {
+        const settings = loadSettings();
+
+        if (settings.useBaseHost && settings.baseHost) {
+            // Проверяем, является ли URL относительным
+            if (originalUrl.startsWith('/')) {
+                // Относительный URL - добавляем базовый хост
+                return settings.baseHost + originalUrl;
+            } else if (!originalUrl.startsWith('http://') && !originalUrl.startsWith('https://')) {
+                // Относительный URL без слэша - добавляем базовый хост
+                return settings.baseHost + '/' + originalUrl;
+            }
+            // Абсолютный URL - возвращаем как есть
+            return originalUrl;
+        }
+
+        // Если настройка отключена, возвращаем оригинальный URL
+        return originalUrl;
+    }
+
+    // === Экспорт табов ===
+    function exportTabs() {
+        // Получаем текущие данные и настройки
+        const settings = loadSettings();
+        const exportData = {
+            tabs: tabs,
+            settings: settings
+        };
+
+        const dataStr = JSON.stringify(exportData, null, 2);
+        const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+
+        // Создаем элемент ссылки для скачивания
+        const exportFileDefaultName = 'postman-tabs-export.json';
+
+        const linkElement = document.createElement('a');
+        linkElement.setAttribute('href', dataUri);
+        linkElement.setAttribute('download', exportFileDefaultName);
+        linkElement.click(); // Симулируем клик для скачивания
+    }
+
+    // === Импорт табов ===
+    function importTabs() {
+        // Создаем скрытое поле для выбора файла
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = '.json';
+        fileInput.style.display = 'none';
+
+        fileInput.onchange = function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+
+                    // Проверяем, содержит ли файл как табы, так и настройки
+                    let importedTabs, importedSettings;
+
+                    if (Array.isArray(importedData)) {
+                        // Старый формат - только табы
+                        importedTabs = importedData;
+                        importedSettings = null;
+                    } else if (importedData.tabs) {
+                        // Новый формат - табы и настройки
+                        importedTabs = importedData.tabs;
+                        importedSettings = importedData.settings || null;
+                    } else {
+                        // Неизвестный формат
+                        alert('Файл содержит некорректные данные. Ожидается массив табов или объект с полями tabs и settings.');
+                        return;
+                    }
+
+                    // Валидация формата данных
+                    if (!Array.isArray(importedTabs)) {
+                        alert('Файл содержит некорректные данные. Ожидается массив табов.');
+                        return;
+                    }
+
+                    // Подтверждение перед импортом
+                    const confirmed = confirm(
+                        `Вы уверены, что хотите заменить все текущие табы?\n` +
+                        `Будет импортировано ${importedTabs.length} табов.` +
+                        (importedSettings ? ' Настройки также будут восстановлены.' : '')
+                    );
+
+                    if (confirmed) {
+                        // Заменяем существующие табы на импортированные
+                        tabs = importedTabs;
+
+                        // Обновляем nextId на основе максимального ID в импортированных табах
+                        if (tabs.length > 0) {
+                            nextId = Math.max(...tabs.map(t => t.id)) + 1;
+                        } else {
+                            nextId = 1;
+                        }
+
+                        // Восстанавливаем настройки если они есть
+                        if (importedSettings) {
+                            saveSettings(importedSettings);
+                        }
+
+                        // Очищаем интерфейс
+                        document.querySelectorAll('.tab').forEach(el => el.remove());
+                        document.querySelectorAll('.tab-content').forEach(el => el.remove());
+
+                        // Рендерим новые табы
+                        tabs.forEach(tab => renderTabUI(tab));
+
+                        // Активируем первый таб или создаем новый, если нет табов
+                        if (tabs.length > 0) {
+                            activateTab(tabs[0].id);
+                            renderTabContentFresh(tabs[0].id);
+                        } else {
+                            createNewTab();
+                        }
+
+                        // Сохраняем в localStorage
+                        saveToStorage();
+
+                        alert(`Успешно импортировано ${importedTabs.length} табов!` +
+                              (importedSettings ? ' Настройки восстановлены.' : ''));
+                    }
+                } catch (error) {
+                    console.error('Ошибка при импорте:', error);
+                    alert('Ошибка при чтении файла. Возможно, файл поврежден или имеет неверный формат.');
+                }
+            };
+            reader.readAsText(file);
+        };
+
+        // Добавляем элемент в документ и кликаем по нему
+        document.body.appendChild(fileInput);
+        fileInput.click();
+        document.body.removeChild(fileInput);
+    }
+
+    // === Выполнение HTTP запроса ===
+    async function executeRequest(tabId) {
+        const tabData = tabs.find(t => t.id === tabId);
+        if (!tabData) return;
+
+        // Показываем сайдбар с результатами, если он скрыт
+        const resultsSidebar = document.getElementById(`results-sidebar-${tabId}`);
+        if (resultsSidebar) {
+            resultsSidebar.classList.remove('hidden');
+        }
+
+        // Показываем индикатор загрузки
+        updateResultsDisplay(tabId, '<div class="text-blue-500">Загрузка...</div>', 'loading');
+
+        try {
+            // Подготовка заголовков
+            const headers = {};
+            tabData.headers.forEach(header => {
+                if (header.key && header.value) {
+                    headers[header.key] = header.value;
+                }
+            });
+
+            // Добавляем Content-Type если тело есть
+            if (tabData.body && BODY_METHODS.includes(tabData.method)) {
+                if (!headers['Content-Type']) {
+                    headers['Content-Type'] = 'application/json';
+                }
+            }
+
+            // Подготовка параметров запроса
+            const config = {
+                method: tabData.method,
+                headers: headers,
+            };
+
+            // Добавляем тело если метод поддерживает
+            if (BODY_METHODS.includes(tabData.method) && tabData.body) {
+                // Проверяем, является ли тело JSON строкой
+                try {
+                    JSON.parse(tabData.body);
+                    config.body = tabData.body;
+                } catch (e) {
+                    // Если не JSON, отправляем как текст
+                    config.body = tabData.body;
+                }
+            }
+
+            // Получаем финальный URL с учетом настроек
+            const finalUrl = getFinalUrl(tabData.url);
+
+            // Выполняем запрос
+            const response = await fetch(finalUrl, config);
+            const responseBody = await response.text();
+
+            // Формируем результат
+            const result = {
+                statusCode: response.status,
+                statusText: response.statusText,
+                headers: Array.from(response.headers.entries()),
+                body: responseBody,
+                timestamp: new Date().toLocaleString()
+            };
+
+            // Отображаем результат
+            updateResultsDisplay(tabId, result, 'success');
+
+            // Сохраняем результат в табе
+            updateTabData(tabId, {lastResult: result});
+
+        } catch (error) {
+            // Обработка ошибки
+            const errorResult = {
+                error: true,
+                message: error.message,
+                timestamp: new Date().toLocaleString()
+            };
+
+            updateResultsDisplay(tabId, errorResult, 'error');
+
+            // Сохраняем результат ошибки в табе
+            updateTabData(tabId, {lastResult: errorResult});
+        }
+    }
+
+    // === Обновление отображения результата ===
+    function updateResultsDisplay(tabId, result, status) {
+        const resultsContainer = document.getElementById(`results-container-${tabId}`);
+        if (!resultsContainer) return;
+
+        let displayContent = '';
+
+        if (status === 'loading') {
+            displayContent = result; // Просто текст загрузки
+        } else if (result.error) {
+            displayContent = `
+                <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                    <h3 class="font-bold">Ошибка выполнения запроса</h3>
+                    <p>${result.message}</p>
+                    <p class="text-xs mt-1">Время: ${result.timestamp}</p>
+                </div>
+            `;
+        } else {
+            // Форматируем успешный результат
+            displayContent = `
+                <div class="mb-4">
+                    <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+                        <h3 class="font-bold">Статус: ${result.statusCode} ${result.statusText}</h3>
+                        <p class="text-xs">Время: ${result.timestamp}</p>
+                    </div>
+
+                    <h4 class="font-bold mb-2">Заголовки ответа:</h4>
+                    <div class="overflow-x-auto max-h-40 overflow-y-auto mb-4 border rounded">
+                        <table class="min-w-full divide-y divide-gray-200 text-sm">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-3 py-2 text-left">Имя</th>
+                                    <th class="px-3 py-2 text-left">Значение</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-200">
+                                ${result.headers.map(([name, value]) => `
+                                    <tr>
+                                        <td class="px-3 py-1 font-medium">${name}</td>
+                                        <td class="px-3 py-1">${value}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h4 class="font-bold mb-2">Тело ответа:</h4>
+                    <pre class="bg-gray-100 p-4 rounded border max-h-96 overflow-y-auto whitespace-pre-wrap font-mono text-sm">${formatResponseBody(result.body)}</pre>
+                </div>
+            `;
+        }
+
+        resultsContainer.innerHTML = displayContent;
+    }
+
+    // === Форматирование тела ответа ===
+    function formatResponseBody(body) {
+        try {
+            // Проверяем, является ли тело JSON
+            const parsed = JSON.parse(body);
+            return JSON.stringify(parsed, null, 2);
+        } catch (e) {
+            // Если не JSON, возвращаем как есть
+            return body;
+        }
+    }
+
+    // === Инициализация приложения ===
+    function init() {
+        // Кнопка "+" для добавления таба
+        const addButton = document.createElement('button');
+        addButton.className = 'px-3 py-2 text-xl text-gray-600 hover:bg-gray-300 rounded';
+        addButton.textContent = '+';
+        addButton.title = 'Добавить новый таб';
+        addButton.addEventListener('click', () => createNewTab());
+        document.querySelector('#tabsContainer').appendChild(addButton);
+
+        // Кнопка экспорта
+        const exportButton = document.createElement('button');
+        exportButton.className = 'px-3 py-2 ml-2 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
+        exportButton.textContent = 'Экспорт';
+        exportButton.title = 'Экспортировать все табы';
+        exportButton.addEventListener('click', exportTabs);
+        document.querySelector('#tabsContainer').appendChild(exportButton);
+
+        // Кнопка импорта
+        const importButton = document.createElement('button');
+        importButton.className = 'px-3 py-2 ml-1 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
+        importButton.textContent = 'Импорт';
+        importButton.title = 'Импортировать табы';
+        importButton.addEventListener('click', importTabs);
+        document.querySelector('#tabsContainer').appendChild(importButton);
+
+        // Кнопка настроек
+        const settingsButton = document.createElement('button');
+        settingsButton.className = 'px-3 py-2 ml-1 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
+        settingsButton.textContent = 'Настройки';
+        settingsButton.title = 'Настройки приложения';
+        settingsButton.addEventListener('click', showSettings);
+        document.querySelector('#tabsContainer').appendChild(settingsButton);
+
+        // Загрузка данных
+        loadFromStorage();
+    }
+
+    // Запуск
+    init();
+</script>
+</body>
+</html>
