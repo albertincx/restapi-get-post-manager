@@ -26,6 +26,7 @@
             /*min-width: 50px;*/
             /*width: 100px;*/
         }
+
         input {
             width: 100px;
         }
@@ -50,13 +51,6 @@
 </head>
 <body class="bg-gray-100 h-screen flex flex-col font-sans">
 
-<!-- Языковой переключатель -->
-<div class="language-selector">
-    <select id="languageSelect" class="px-2 py-1 border border-gray-300 rounded text-sm">
-        <option value="ru">RU</option>
-        <option value="en">EN</option>
-    </select>
-</div>
 
 <!-- Контейнер табов -->
 <div id="tabsContainer" class="flex bg-gray-200 border-b border-gray-300 px-1 overflow-x-auto whitespace-nowrap_"></div>
@@ -107,7 +101,12 @@
             minimize: "[-]",
             maximize: "[+]",
             emptyKeyPlaceholder: "Ключ",
-            emptyValuePlaceholder: "Значение"
+            emptyValuePlaceholder: "Значение",
+            multipleUrlsLabel: "Дополнительные URL для запросов",
+            addUrlBtn: "+ Добавить URL",
+            languageLabel: "Язык интерфейса",
+            multipleRequestsLabel: "Множественные запросы",
+            enableMultipleRequests: "Выполнять запросы ко всем URL одновременно"
         },
         en: {
             pageTitle: "Postman-like client (Tailwind)",
@@ -148,15 +147,17 @@
             minimize: "[-]",
             maximize: "[+]",
             emptyKeyPlaceholder: "Key",
-            emptyValuePlaceholder: "Value"
+            emptyValuePlaceholder: "Value",
+            multipleUrlsLabel: "Additional URLs for requests",
+            addUrlBtn: "+ Add URL",
+            languageLabel: "Interface Language",
+            multipleRequestsLabel: "Multiple Requests",
+            enableMultipleRequests: "Execute requests to all URLs simultaneously"
         }
     };
 
     // Текущий язык
-    let currentLanguage = localStorage.getItem('app_language') || 'ru';
-
-    // Обновляем атрибут языка HTML сразу при загрузке
-    document.documentElement.lang = currentLanguage;
+    let currentLanguage = 'en'; // Default value, will be loaded from settings
 
     // Функция получения перевода
     function t(key) {
@@ -186,8 +187,10 @@
         if (importBtn) importBtn.textContent = t('importBtn');
         if (settingsBtn) settingsBtn.textContent = t('settingsBtn');
 
-        // Сохраняем язык
-        localStorage.setItem('app_language', currentLanguage);
+        // Сохраняем язык в настройках
+        const settings = loadSettings();
+        settings.language = currentLanguage;
+        saveSettings(settings);
     }
 
     let tabs = [];
@@ -239,7 +242,27 @@
             lastResult: null
         };
         tabs.push(newTab);
-        console.log('aaa',newTab)
+        // console.log('aaa', newTab)
+        renderTabUI(newTab);
+        activateTab(newTab.id);
+        saveToStorage();
+    }
+
+    // === Дублирование таба ===
+    function duplicateTab(id) {
+        const originalTab = tabs.find(t => t.id === id);
+        if (!originalTab) return;
+
+        const newTab = {
+            id: nextId++,
+            name: originalTab.name + ' (copy)',
+            url: originalTab.url,
+            method: originalTab.method,
+            headers: JSON.parse(JSON.stringify(originalTab.headers)), // Deep copy headers
+            body: originalTab.body,
+            lastResult: originalTab.lastResult ? JSON.parse(JSON.stringify(originalTab.lastResult)) : null
+        };
+        tabs.push(newTab);
         renderTabUI(newTab);
         activateTab(newTab.id);
         saveToStorage();
@@ -292,6 +315,15 @@
             if (e.key === 'Enter') input.blur();
         });
 
+        const duplicateButton = document.createElement('button');
+        duplicateButton.className = 'close-btn absolute -top-1 left-0 bg-blue-100 text-blue-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity';
+        duplicateButton.innerHTML = '=';
+        duplicateButton.title = 'Duplicate tab';
+        duplicateButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            duplicateTab(tabData.id);
+        });
+
         const closeButton = document.createElement('button');
         closeButton.className = 'close-btn absolute -top-1 -right-1 bg-red-100 text-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity';
         closeButton.innerHTML = '×';
@@ -302,6 +334,7 @@
 
         tabEl.classList.add('group');
         tabEl.appendChild(input);
+        tabEl.appendChild(duplicateButton);
         tabEl.appendChild(closeButton);
         tabEl.addEventListener('click', () => activateTab(tabData.id));
 
@@ -367,19 +400,19 @@
         <textarea id="body-${tabData.id}" ${!isBodyAllowed ? 'disabled' : ''} class="w-full px-3 py-2 border ${isBodyAllowed ? 'border-gray-300' : 'border-gray-200 bg-gray-100'} rounded font-mono min-h-[120px]">${tabData.body}</textarea>
       `;
 
-        // Кнопка выполнить запрос
-        const executeBtn = document.createElement('button');
-        executeBtn.className = 'px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 mb-4 mt-2';
-        executeBtn.textContent = t('executeRequestBtn');
-        executeBtn.addEventListener('click', () => {
-            executeRequest(tabData.id);
-        });
+        // Кнопки выполнить запрос для каждого URL
+        const executeBtnContainer = document.createElement('div');
+        executeBtnContainer.id = `execute-buttons-container-${tabData.id}`;
+        executeBtnContainer.className = 'flex flex-wrap gap-2 mb-4 mt-2';
+
+        // Создаем кнопки выполнения запроса
+        updateExecuteButtons(tabData.id, executeBtnContainer);
 
         requestPanel.appendChild(methodUrlGroup);
         requestPanel.appendChild(headersGroup);
         requestPanel.appendChild(addHeaderBtn);
         requestPanel.appendChild(bodyGroup);
-        requestPanel.appendChild(executeBtn);
+        requestPanel.appendChild(executeBtnContainer);
 
         // Панель с результатами (сайдбар)
         const resultsPanel = document.createElement('div');
@@ -499,14 +532,10 @@
 
     // === Инициализация приложения ===
     function init() {
-        // Устанавливаем начальный язык в выпадающем списке
-        document.getElementById('languageSelect').value = currentLanguage;
-
-        // Добавляем обработчик события для переключения языка
-        document.getElementById('languageSelect').addEventListener('change', function() {
-            currentLanguage = this.value;
-            updateLanguage();
-        });
+        // Загружаем язык из настроек
+        const settings = loadSettings();
+        currentLanguage = settings.language || 'ru';
+        document.documentElement.lang = currentLanguage;
 
         // Кнопка "+" для добавления таба
         const addButton = document.createElement('button');
@@ -570,6 +599,24 @@
                     <span class="text-sm">${t('useBaseHostLabel')}</span>
                 </label>
             </div>
+            <div class="mb-4">
+                <label class="block font-bold text-sm mb-2">${t('multipleUrlsLabel')}</label>
+                <div id="urls-container" class="space-y-2 mb-2"></div>
+                <button id="add-url-btn" class="px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600 mt-2">${t('addUrlBtn')}</button>
+            </div>
+            <div class="mb-4">
+                <label class="block font-bold text-sm mb-2">${t('languageLabel')}</label>
+                <select id="language-select" class="w-full px-3 py-2 border border-gray-300 rounded">
+                    <option value="ru">Русский</option>
+                    <option value="en">English</option>
+                </select>
+            </div>
+            <div class="mb-4">
+                <label class="flex items-center">
+                    <input type="checkbox" id="enable-multiple-requests" class="mr-2" />
+                    <span class="text-sm">${t('enableMultipleRequests')}</span>
+                </label>
+            </div>
             <div class="flex justify-end space-x-2">
                 <button id="cancel-settings" class="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100">${t('cancelBtn')}</button>
                 <button id="save-settings" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">${t('saveBtn')}</button>
@@ -583,6 +630,25 @@
         const settings = loadSettings();
         document.getElementById('base-host-input').value = settings.baseHost || '';
         document.getElementById('use-base-host-checkbox').checked = settings.useBaseHost;
+
+        // Загрузка дополнительных URL
+        const urlsContainer = document.getElementById('urls-container');
+        const additionalUrls = settings.additionalUrls || [];
+        urlsContainer.innerHTML = '';
+        additionalUrls.forEach((url, index) => {
+            addUrlInput(urlsContainer, url, index);
+        });
+
+        // Добавляем один пустой URL, если нет дополнительных URL
+        if (additionalUrls.length === 0) {
+            addUrlInput(urlsContainer, '', 0);
+        }
+
+        // Настройка языка
+        document.getElementById('language-select').value = settings.language || 'ru';
+
+        // Множественные запросы
+        document.getElementById('enable-multiple-requests').checked = settings.enableMultipleRequests || false;
 
         // Обработчик нажатия клавиши ESC
         function handleEscKey(event) {
@@ -608,12 +674,77 @@
         // Добавляем обработчик клавиатуры
         document.addEventListener('keydown', handleEscKey);
 
+        // Функция для добавления поля ввода URL
+        function addUrlInput(container, value = '', index) {
+            const row = document.createElement('div');
+            row.className = 'flex gap-2 mb-2';
+            row.innerHTML = `
+                <input type="text" value="${value}" placeholder="https://api.example.com" class="flex-1 px-2 py-1 border border-gray-300 rounded text-sm" />
+                <button class="w-7 h-7 flex items-center justify-center bg-red-100 text-red-500 rounded hover:bg-red-200 text-sm">×</button>
+            `;
+
+            const input = row.querySelector('input');
+            const removeBtn = row.querySelector('button');
+
+            removeBtn.addEventListener('click', () => {
+                container.removeChild(row);
+                // Если нет ни одного поля, добавим хотя бы одно пустое
+                if (container.children.length === 0) {
+                    addUrlInput(container, '', 0);
+                }
+            });
+
+            container.appendChild(row);
+        }
+
+        // Обработчик кнопки добавления URL
+        document.getElementById('add-url-btn').addEventListener('click', () => {
+            const urlsContainer = document.getElementById('urls-container');
+            addUrlInput(urlsContainer, '', urlsContainer.children.length);
+        });
+
         document.getElementById('save-settings').addEventListener('click', () => {
             const baseHost = document.getElementById('base-host-input').value.trim();
             const useBaseHost = document.getElementById('use-base-host-checkbox').checked;
 
+            // Получаем дополнительные URL
+            const urlsContainer = document.getElementById('urls-container');
+            const urlInputs = urlsContainer.querySelectorAll('input');
+            const additionalUrls = [];
+            urlInputs.forEach(input => {
+                if (input.value.trim()) {
+                    additionalUrls.push(input.value.trim());
+                }
+            });
+
+            // Получаем выбранный язык
+            const selectedLanguage = document.getElementById('language-select').value;
+
+            // Получаем состояние множественных запросов
+            const enableMultipleRequests = document.getElementById('enable-multiple-requests').checked;
+
             // Сохраняем настройки
-            saveSettings({ baseHost, useBaseHost });
+            saveSettings({
+                baseHost,
+                useBaseHost,
+                additionalUrls,
+                language: selectedLanguage,
+                enableMultipleRequests
+            });
+
+            // Обновляем язык приложения
+            if (currentLanguage !== selectedLanguage) {
+                currentLanguage = selectedLanguage;
+                updateLanguage();
+            }
+
+            // Обновляем кнопки выполнения запроса во всех табах
+            tabs.forEach(tab => {
+                const container = document.getElementById(`execute-buttons-container-${tab.id}`);
+                if (container) {
+                    updateExecuteButtons(tab.id, container);
+                }
+            });
 
             // Закрываем модальное окно
             closeSettingsModal();
@@ -627,13 +758,33 @@
         const settingsStr = localStorage.getItem('postman_settings');
         if (settingsStr) {
             try {
-                return JSON.parse(settingsStr);
+                const settings = JSON.parse(settingsStr);
+                // Убедимся, что у нас есть все необходимые поля
+                return {
+                    baseHost: settings.baseHost || '',
+                    useBaseHost: settings.useBaseHost || false,
+                    additionalUrls: settings.additionalUrls || [],
+                    language: settings.language || (localStorage.getItem('app_language') || 'ru'),
+                    enableMultipleRequests: settings.enableMultipleRequests || false
+                };
             } catch (e) {
                 console.error('Ошибка при загрузке настроек', e);
-                return { baseHost: '', useBaseHost: false };
+                return {
+                    baseHost: '',
+                    useBaseHost: false,
+                    additionalUrls: [],
+                    language: localStorage.getItem('app_language') || 'ru',
+                    enableMultipleRequests: false
+                };
             }
         }
-        return { baseHost: '', useBaseHost: false };
+        return {
+            baseHost: '',
+            useBaseHost: false,
+            additionalUrls: [],
+            language: localStorage.getItem('app_language') || 'ru',
+            enableMultipleRequests: false
+        };
     }
 
     // === Сохранение настроек ===
@@ -651,7 +802,7 @@
     // === Получение финального URL с учетом настроек ===
     function getFinalUrl(originalUrl) {
         const settings = loadSettings();
-
+        // console.log(originalUrl)
         if (settings.useBaseHost && settings.baseHost) {
             // Проверяем, является ли URL относительным
             if (originalUrl.startsWith('/')) {
@@ -679,7 +830,7 @@
         };
 
         const dataStr = JSON.stringify(exportData, null, 2);
-        const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+        const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
 
         // Создаем элемент ссылки для скачивания
         const exportFileDefaultName = 'postman-tabs-export.json';
@@ -698,12 +849,12 @@
         fileInput.accept = '.json';
         fileInput.style.display = 'none';
 
-        fileInput.onchange = function(event) {
+        fileInput.onchange = function (event) {
             const file = event.target.files[0];
             if (!file) return;
 
             const reader = new FileReader();
-            reader.onload = function(e) {
+            reader.onload = function (e) {
                 try {
                     const importedData = JSON.parse(e.target.result);
 
@@ -792,7 +943,80 @@
     }
 
     // === Выполнение HTTP запроса ===
-    async function executeRequest(tabId) {
+    async function executeRequest(tabId, targetUrl = null) {
+        const tabData = tabs.find(t => t.id === tabId);
+        if (!tabData) return;
+
+        // Получаем настройки
+        const settings = loadSettings();
+        const enableMultipleRequests = settings.enableMultipleRequests || false;
+        const additionalUrls = settings.additionalUrls || [];
+
+        // Если включены множественные запросы и targetUrl не указан, выполняем запросы ко всем URL
+        if (enableMultipleRequests && !targetUrl) {
+            // Создаем массив всех URL для запроса (основной + дополнительные)
+            const allUrls = [tabData.url, ...additionalUrls].filter(url => url.trim() !== '');
+
+            if (allUrls.length > 1) {
+                // Выполняем параллельные запросы ко всем URL
+                const results = await Promise.allSettled(
+                    allUrls.map(async (url, index) => {
+                        // console.log(url)
+                        const result = await executeSingleRequest(tabId, url + tabData.url, ` (URL ${index + 1})`);
+                        return {url, result};
+                    })
+                );
+
+                // Формируем объединенный результат
+                let combinedResult = '';
+                results.forEach((result, index) => {
+                    if (result.status === 'fulfilled') {
+                        const url = result.value.url;
+                        const requestResult = result.value.result;
+                        combinedResult += `<div class="mb-4 p-3 border rounded bg-gray-50"><h4 class="font-bold">URL: ${url}</h4>`;
+                        if (requestResult.error) {
+                            combinedResult += `<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                                <h3 class="font-bold">${t('requestError')}</h3>
+                                <p>${requestResult.message}</p>
+                                <p class="text-xs mt-1">${t('timestamp')} ${requestResult.timestamp}</p>
+                            </div>`;
+                        } else {
+                            combinedResult += `<div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+                                <h3 class="font-bold">${t('responseStatus')}${requestResult.statusCode} ${requestResult.statusText}</h3>
+                                <p class="text-xs">${t('timestamp')} ${requestResult.timestamp}</p>
+                            </div>`;
+                        }
+                        combinedResult += '</div>';
+                    } else {
+                        combinedResult += `<div class="mb-4 p-3 border rounded bg-red-50"><h4 class="font-bold">URL: ${allUrls[index]}</h4>
+                            <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                                <h3 class="font-bold">${t('requestError')}</h3>
+                                <p>${result.reason.message || 'Unknown error'}</p>
+                            </div></div>`;
+                    }
+                });
+
+                // Показываем объединенные результаты
+                const resultsContainer = document.getElementById(`results-container-${tabId}`);
+                if (resultsContainer) {
+                    resultsContainer.innerHTML = combinedResult;
+                }
+
+                return;
+            }
+        }
+
+        // Если указан конкретный URL или множественные запросы отключены, выполняем обычный запрос
+        let urlToUse = targetUrl || tabData.url;
+        // console.log(targetUrl, tabData.url)
+        if (urlToUse.match('http')) {
+            urlToUse = targetUrl + tabData.url;
+        }
+        await executeSingleRequest(tabId, urlToUse);
+    }
+
+    // === Выполнение одиночного HTTP запроса ===
+    async function executeSingleRequest(tabId, targetUrl, suffix = '') {
         const tabData = tabs.find(t => t.id === tabId);
         if (!tabData) return;
 
@@ -802,8 +1026,10 @@
             resultsSidebar.classList.remove('hidden');
         }
 
-        // Показываем индикатор загрузки
-        updateResultsDisplay(tabId, `<div class="text-blue-500">${t('resultsLoading')}</div>`, 'loading');
+        // Показываем индикатор загрузки (только для одиночного запроса)
+        if (!suffix) {
+            updateResultsDisplay(tabId, `<div class="text-blue-500">${t('resultsLoading')}</div>`, 'loading');
+        }
 
         try {
             // Подготовка заголовков
@@ -840,7 +1066,7 @@
             }
 
             // Получаем финальный URL с учетом настроек
-            const finalUrl = getFinalUrl(tabData.url);
+            const finalUrl = getFinalUrl(targetUrl);
 
             // Выполняем запрос
             const response = await fetch(finalUrl, config);
@@ -855,11 +1081,16 @@
                 timestamp: new Date().toLocaleString()
             };
 
-            // Отображаем результат
-            updateResultsDisplay(tabId, result, 'success');
+            // Если это одиночный запрос (не часть множественного), обновляем дисплей
+            if (!suffix) {
+                // Отображаем результат
+                updateResultsDisplay(tabId, result, 'success');
 
-            // Сохраняем результат в табе
-            updateTabData(tabId, {lastResult: result});
+                // Сохраняем результат в табе
+                updateTabData(tabId, {lastResult: result});
+            }
+
+            return {url: targetUrl, result};
 
         } catch (error) {
             // Обработка ошибки
@@ -869,11 +1100,51 @@
                 timestamp: new Date().toLocaleString()
             };
 
-            updateResultsDisplay(tabId, errorResult, 'error');
+            // Если это одиночный запрос (не часть множественного), обновляем дисплей
+            if (!suffix) {
+                updateResultsDisplay(tabId, errorResult, 'error');
 
-            // Сохраняем результат ошибки в табе
-            updateTabData(tabId, {lastResult: errorResult});
+                // Сохраняем результат ошибки в табе
+                updateTabData(tabId, {lastResult: errorResult});
+            }
+
+            return {url: targetUrl, result: errorResult};
         }
+    }
+
+    // === Обновление кнопок выполнения запроса ===
+    function updateExecuteButtons(tabId, container) {
+        const tabData = tabs.find(t => t.id === tabId);
+        if (!tabData) return;
+
+        // Получаем настройки для получения дополнительных URL
+        const settings = loadSettings();
+        const additionalUrls = settings.additionalUrls || [];
+
+        // Очищаем контейнер
+        container.innerHTML = '';
+
+        // Создаем основную кнопку для основного URL
+        const mainExecuteBtn = document.createElement('button');
+        mainExecuteBtn.className = 'px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600';
+        mainExecuteBtn.textContent = t('executeRequestBtn');
+        mainExecuteBtn.title = tabData.url; // Показываем URL в подсказке
+        mainExecuteBtn.addEventListener('click', () => {
+            executeRequest(tabId, tabData.url);
+        });
+        container.appendChild(mainExecuteBtn);
+
+        // Создаем кнопки для дополнительных URL
+        additionalUrls.forEach((url, index) => {
+            const additionalExecuteBtn = document.createElement('button');
+            additionalExecuteBtn.className = 'px-4 py-2 bg-indigo-500 text-white rounded hover:bg-indigo-600';
+            additionalExecuteBtn.textContent = `URL ${url}`;
+            additionalExecuteBtn.title = url; // Показываем URL в подсказке
+            additionalExecuteBtn.addEventListener('click', () => {
+                executeRequest(tabId, url);
+            });
+            container.appendChild(additionalExecuteBtn);
+        });
     }
 
     // === Обновление отображения результата ===
@@ -945,14 +1216,10 @@
 
     // === Инициализация приложения ===
     function init() {
-        // Устанавливаем начальный язык в выпадающем списке
-        document.getElementById('languageSelect').value = currentLanguage;
-
-        // Добавляем обработчик события для переключения языка
-        document.getElementById('languageSelect').addEventListener('change', function() {
-            currentLanguage = this.value;
-            updateLanguage();
-        });
+        // Загружаем язык из настроек
+        const settings = loadSettings();
+        currentLanguage = settings.language || 'ru';
+        document.documentElement.lang = currentLanguage;
 
         // Кнопка экспорта
         const exportButton = document.createElement('button');
