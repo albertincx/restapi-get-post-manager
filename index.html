@@ -918,10 +918,12 @@
     }
 
     // === Закрытие модального окна ===
-    function closeModal(modal) {
+    function closeModal(ma) {
         // Удаляем обработчик клавиатуры при закрытии модального окна
         document.removeEventListener('keydown', window.settingsEscHandler);
-        document.body.removeChild(modal);
+        document.body.removeChild(ma);
+        showTa = false
+        showSe = false
     }
 
     // === Получение финального URL с учетом настроек ===
@@ -1086,7 +1088,8 @@
                 // Выполняем параллельные запросы ко всем URL
                 const results = await Promise.allSettled(
                     allUrls.map(async (url, index) => {
-                        // console.log(url)
+                        // console.log('url + tabData.url')
+                        // console.log(url + tabData.url)
                         const result = await executeSingleRequest(tabId, url + tabData.url, ` (URL ${index + 1})`);
                         return {url, result};
                     })
@@ -1133,8 +1136,9 @@
 
         // Если указан конкретный URL или множественные запросы отключены, выполняем обычный запрос
         let urlToUse = targetUrl || tabData.url;
+        // console.log('targetUrl, tabData.url')
         // console.log(targetUrl, tabData.url)
-        if (urlToUse.match('http')) {
+        if (urlToUse.match('http') && !tabData.url.match('http')) {
             urlToUse = targetUrl + tabData.url;
         }
         await executeSingleRequest(tabId, urlToUse);
@@ -1499,6 +1503,12 @@
 
         document.body.appendChild(modal);
 
+        // function closeModal() {
+        //     document.body.removeChild(modal);
+        //     showTa = false
+        //     showSe = false
+        // }
+
         // Add event listeners to tab options
         document.querySelectorAll('.tab-option').forEach(option => {
             option.addEventListener('click', () => {
@@ -1509,28 +1519,25 @@
                 document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('active'));
                 document.getElementById('mobileTabsBtn').classList.add('active');
 
-                document.body.removeChild(modal);
+                closeModal(modal)
             });
         });
 
         // Close button
         document.getElementById('close-tab-selector').addEventListener('click', () => {
-            document.body.removeChild(modal);
-            showTa = false
+            closeModal(modal)
         });
 
         // Add new tab button
         document.getElementById('add-new-tab-mobile').addEventListener('click', () => {
             createNewTab();
-            document.body.removeChild(modal);
+            closeModal(modal)
         });
 
         // Click outside to close
         modal.addEventListener('click', (e) => {
             if (e.target === modal) {
-                document.body.removeChild(modal);
-                showTa = false
-                showSe = false
+                closeModal(modal)
             }
         });
     }
