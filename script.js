@@ -550,7 +550,7 @@ function showSettings() {
 
     // Содержимое модального окна
     const settingsContent = document.createElement('div');
-    settingsContent.className = 'bg-white p-6 rounded-lg shadow-lg w-96 max-w-full mx-4';
+    settingsContent.className = 'bg-white p-6 rounded-lg shadow-lg w-96 max-w-full mx-4 modal-content';
     settingsContent.innerHTML = `
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-xl font-bold">${t('settingsTitle')}</h2>
@@ -1493,7 +1493,7 @@ function showTabSelector() {
     const modal = document.createElement('div');
     modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
     modal.innerHTML = `
-            <div class="bg-white p-6 rounded-lg shadow-lg w-80 max-w-full mx-4">
+            <div class="bg-white p-6 rounded-lg shadow-lg w-80 max-w-full mx-4 modal-content">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-xl font-bold">Select Tab</h2>
                     <button id="close-tab-selector" class="text-gray-500 hover:text-gray-700">&times;</button>
@@ -1762,7 +1762,7 @@ function showWebSocketMessages() {
         modal.id = 'mobileWebSocketPopup';
 
         const content = document.createElement('div');
-        content.className = 'bg-white p-6 rounded-lg shadow-lg w-full max-w-md max-h-[80vh] overflow-y-auto';
+        content.className = 'bg-white p-6 rounded-lg shadow-lg w-full max-w-md max-h-[80vh] overflow-y-auto modal-content';
         content.innerHTML = `
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-xl font-bold">${t('webSocketMessagesTitle')}</h2>

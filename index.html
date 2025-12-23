@@ -124,6 +124,46 @@
             }
         }
 
+        /* Scrolling for modals and tab content on small screens */
+        .modal-content {
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .tab-content {
+            overflow-y: auto;
+        }
+
+        @media (max-height: 700px) {
+            .modal-content {
+                max-height: 75vh;
+            }
+
+            .tab-content {
+                max-height: calc(100vh - 100px); /* Account for header and other elements */
+            }
+        }
+
+        @media (max-height: 600px) {
+            .modal-content {
+                max-height: 70vh;
+            }
+
+            .tab-content {
+                max-height: calc(100vh - 120px); /* Account for header and other elements */
+            }
+        }
+
+        @media (max-height: 450px) {
+            .modal-content {
+                max-height: 60vh;
+            }
+
+            .tab-content {
+                max-height: calc(100vh - 100px);
+            }
+        }
+
         /* Mobile response popup */
         .mobile-response-popup {
             display: none;
@@ -156,7 +196,7 @@
         }
     </style>
 </head>
-<body class="bg-gray-100 h-screen flex flex-col font-sans">
+<body class="bg-gray-100 h-screen flex flex-col font-sans overflow-hidden">
 
 
 <!-- Контейнер табов -->
