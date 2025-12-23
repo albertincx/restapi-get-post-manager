@@ -655,7 +655,7 @@ function showSettings() {
         // Get the WebSocket URL from the input field
         const webSocketUrl = document.getElementById('websocket-url-input').value.trim();
         if (!webSocketUrl) {
-            alert('Please enter a WebSocket URL first');
+            showNotification('Please enter a WebSocket URL first', 'warning');
             return;
         }
 
@@ -776,7 +776,7 @@ function showSettings() {
         // Закрываем модальное окно
         closeSettingsModal();
 
-        alert(t('settingsSaved'));
+        showNotification(t('settingsSaved'));
     });
 }
 
@@ -903,13 +903,13 @@ function importTabs() {
                     importedSettings = importedData.settings || null;
                 } else {
                     // Неизвестный формат
-                    alert(t('importInvalidFormat'));
+                    showNotification(t('importInvalidFormat'));
                     return;
                 }
 
                 // Валидация формата данных
                 if (!Array.isArray(importedTabs)) {
-                    alert(t('noTabsToImport'));
+                    showNotification(t('noTabsToImport'));
                     return;
                 }
 
@@ -958,11 +958,11 @@ function importTabs() {
                     const successMessage = t('importSuccess')
                         .replace('%d', importedTabs.length)
                         .replace('%s', settingsText ? ' ' + t('importSuccess').split('%d')[1].split('%s')[0] : '');
-                    alert(successMessage);
+                    showNotification(successMessage);
                 }
             } catch (error) {
                 console.error('Ошибка при импорте:', error);
-                alert(t('importError'));
+                showNotification(t('importError'));
             }
         };
         reader.readAsText(file);
@@ -1616,7 +1616,7 @@ function showTabSelector() {
 // === WebSocket функциональность ===
 function startWebSocket() {
     if (isWebSocketConnected && webSocket) {
-        alert(t('webSocketConnected'));
+        showNotification(t('webSocketConnected'), 'info');
         return;
     }
 
@@ -1624,7 +1624,7 @@ function startWebSocket() {
     const webSocketUrl = settings.webSocketUrl;
 
     if (!webSocketUrl) {
-        alert('Please set WebSocket URL in settings first');
+        showNotification('Please set WebSocket URL in settings first', 'warning');
         return;
     }
 
@@ -1642,6 +1642,9 @@ function startWebSocket() {
                 timestamp: new Date().toLocaleString()
             });
             updateWebSocketMessagesDisplay();
+
+            // Show notification for successful connection
+            showNotification(t('webSocketConnected'), 'success');
         };
 
         webSocket.onmessage = function(event) {
@@ -1662,6 +1665,9 @@ function startWebSocket() {
                 timestamp: new Date().toLocaleString()
             });
             updateWebSocketMessagesDisplay();
+
+            // Show notification for WebSocket error
+            showNotification(t('webSocketConnectionError') + ': ' + error.message, 'error');
         };
 
         webSocket.onclose = function(event) {
@@ -1675,6 +1681,9 @@ function startWebSocket() {
                 timestamp: new Date().toLocaleString()
             });
             updateWebSocketMessagesDisplay();
+
+            // Show notification for disconnection
+            showNotification(t('webSocketDisconnected'), 'info');
         };
     } catch (error) {
         console.error('Failed to create WebSocket:', error);
@@ -1684,6 +1693,9 @@ function startWebSocket() {
             timestamp: new Date().toLocaleString()
         });
         updateWebSocketMessagesDisplay();
+
+        // Show notification for WebSocket connection failure
+        showNotification(t('webSocketConnectionError') + ': ' + error.message, 'error');
     }
 }
 
@@ -1694,6 +1706,9 @@ function stopWebSocket() {
         isWebSocketConnected = false;
         updateWebSocketButton();
         showHideMobileWebSocketButton(false); // Hide the mobile WebSocket button when stopped
+
+        // Show notification for manual disconnection
+        showNotification(t('webSocketDisconnected'), 'info');
     }
 }
 
@@ -1914,6 +1929,42 @@ function showWebSocketMessages() {
                 document.body.classList.remove('ws-panel-open');
             }
         }
+    }
+}
+
+// Notification functions
+function showNotification(message, type = 'info') {
+    const container = document.getElementById('notification-container');
+    if (!container) return;
+
+    const notificationId = 'notif-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
+
+    const notification = document.createElement('div');
+    notification.id = notificationId;
+    notification.className = `notification ${type}`;
+    notification.innerHTML = `
+        <div class="notification-content">${message}</div>
+        <button class="notification-close" onclick="closeNotification('${notificationId}')">&times;</button>
+    `;
+
+    container.appendChild(notification);
+
+    // Auto-remove notification after 5 seconds
+    setTimeout(() => {
+        closeNotification(notificationId);
+    }, 5000);
+}
+
+function closeNotification(notificationId) {
+    const notification = document.getElementById(notificationId);
+    if (notification) {
+        // Add fade-out animation
+        notification.style.opacity = '0';
+        notification.style.transform = 'translateX(100%)';
+
+        setTimeout(() => {
+            notification.remove();
+        }, 300);
     }
 }
 
