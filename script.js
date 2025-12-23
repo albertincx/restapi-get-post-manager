@@ -48,7 +48,16 @@ const TRANSLATIONS = {
         addUrlBtn: "+ Добавить URL",
         languageLabel: "Язык интерфейса",
         multipleRequestsLabel: "Множественные запросы",
-        enableMultipleRequests: "Выполнять запросы ко всем URL одновременно"
+        enableMultipleRequests: "Выполнять запросы ко всем URL одновременно",
+        webSocketUrlLabel: "URL веб-сокета",
+        webSocketUrlPlaceholder: "ws://localhost:8080/ws",
+        startWebSocketBtn: "Начать слушать вебсокет",
+        stopWebSocketBtn: "Остановить вебсокет",
+        showWebSocketMessages: "Показать сообщения вебсокета",
+        webSocketMessagesTitle: "Сообщения вебсокета",
+        webSocketConnected: "Вебсокет подключен",
+        webSocketDisconnected: "Вебсокет отключен",
+        webSocketConnectionError: "Ошибка подключения к вебсокету"
     },
     en: {
         pageTitle: "Postman-like client (Tailwind)",
@@ -94,7 +103,16 @@ const TRANSLATIONS = {
         addUrlBtn: "+ Add URL",
         languageLabel: "Interface Language",
         multipleRequestsLabel: "Multiple Requests",
-        enableMultipleRequests: "Execute requests to all URLs simultaneously"
+        enableMultipleRequests: "Execute requests to all URLs simultaneously",
+        webSocketUrlLabel: "WebSocket URL",
+        webSocketUrlPlaceholder: "ws://localhost:8080/ws",
+        startWebSocketBtn: "Start WebSocket",
+        stopWebSocketBtn: "Stop WebSocket",
+        showWebSocketMessages: "Show WebSocket Messages",
+        webSocketMessagesTitle: "WebSocket Messages",
+        webSocketConnected: "WebSocket connected",
+        webSocketDisconnected: "WebSocket disconnected",
+        webSocketConnectionError: "WebSocket connection error"
     }
 };
 
@@ -138,6 +156,9 @@ function updateLanguage() {
 let tabs = [];
 let currentTabId = null;
 let nextId = 1;
+let webSocket = null;
+let webSocketMessages = [];
+let isWebSocketConnected = false;
 
 // === Утилиты ===
 const debounce = (func, wait) => {
@@ -564,6 +585,10 @@ function showSettings() {
                     <span class="text-sm">${t('enableMultipleRequests')}</span>
                 </label>
             </div>
+            <div class="mb-4">
+                <label class="block font-bold text-sm mb-2">${t('webSocketUrlLabel')}</label>
+                <input type="text" id="websocket-url-input" placeholder="${t('webSocketUrlPlaceholder')}" class="w-full px-3 py-2 border border-gray-300 rounded" />
+            </div>
             <div class="flex justify-end space-x-2">
                 <button id="cancel-settings" class="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100">${t('cancelBtn')}</button>
                 <button id="save-settings" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">${t('saveBtn')}</button>
@@ -577,6 +602,7 @@ function showSettings() {
     const settings = loadSettings();
     document.getElementById('base-host-input').value = settings.baseHost || '';
     document.getElementById('use-base-host-checkbox').checked = settings.useBaseHost;
+    document.getElementById('websocket-url-input').value = settings.webSocketUrl || '';
 
     // Загрузка дополнительных URL
     const urlsContainer = document.getElementById('urls-container');
@@ -671,13 +697,17 @@ function showSettings() {
         // Получаем состояние множественных запросов
         const enableMultipleRequests = document.getElementById('enable-multiple-requests').checked;
 
+        // Получаем WebSocket URL
+        const webSocketUrl = document.getElementById('websocket-url-input').value.trim();
+
         // Сохраняем настройки
         saveSettings({
             baseHost,
             useBaseHost,
             additionalUrls,
             language: selectedLanguage,
-            enableMultipleRequests
+            enableMultipleRequests,
+            webSocketUrl
         });
 
         // Обновляем язык приложения
@@ -713,7 +743,8 @@ function loadSettings() {
                 useBaseHost: settings.useBaseHost || false,
                 additionalUrls: settings.additionalUrls || [],
                 language: settings.language || (localStorage.getItem('app_language') || 'ru'),
-                enableMultipleRequests: settings.enableMultipleRequests || false
+                enableMultipleRequests: settings.enableMultipleRequests || false,
+                webSocketUrl: settings.webSocketUrl || ''
             };
         } catch (e) {
             console.error('Ошибка при загрузке настроек', e);
@@ -722,7 +753,8 @@ function loadSettings() {
                 useBaseHost: false,
                 additionalUrls: [],
                 language: localStorage.getItem('app_language') || 'ru',
-                enableMultipleRequests: false
+                enableMultipleRequests: false,
+                webSocketUrl: ''
             };
         }
     }
@@ -731,7 +763,8 @@ function loadSettings() {
         useBaseHost: false,
         additionalUrls: [],
         language: localStorage.getItem('app_language') || 'ru',
-        enableMultipleRequests: false
+        enableMultipleRequests: false,
+        webSocketUrl: ''
     };
 }
 
@@ -1196,6 +1229,30 @@ function init() {
     settingsButton.title = t('settingsTooltip');
     settingsButton.addEventListener('click', showSettings);
     document.querySelector('#tabsContainer').appendChild(settingsButton);
+
+    // Кнопка WebSocket
+    const webSocketButton = document.createElement('button');
+    webSocketButton.className = 'px-3 py-2 ml-1 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
+    webSocketButton.textContent = t('startWebSocketBtn');
+    webSocketButton.id = 'websocket-btn';
+    webSocketButton.title = t('startWebSocketBtn');
+    webSocketButton.addEventListener('click', () => {
+        if (isWebSocketConnected) {
+            stopWebSocket();
+        } else {
+            startWebSocket();
+        }
+    });
+    document.querySelector('#tabsContainer').appendChild(webSocketButton);
+
+    // Кнопка показа сообщений WebSocket
+    const webSocketMessagesButton = document.createElement('button');
+    webSocketMessagesButton.className = 'px-3 py-2 ml-1 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
+    webSocketMessagesButton.textContent = t('showWebSocketMessages');
+    webSocketMessagesButton.title = t('showWebSocketMessages');
+    webSocketMessagesButton.addEventListener('click', showWebSocketMessages);
+    document.querySelector('#tabsContainer').appendChild(webSocketMessagesButton);
+
     // Кнопка "+" для добавления таба
     const addButton = document.createElement('button');
     addButton.className = 'px-3 py-2 text-xl text-gray-600 hover:bg-gray-300 rounded';
@@ -1207,8 +1264,138 @@ function init() {
     // Загрузка данных
     loadFromStorage();
 
+    // Setup WebSocket messages panel
+    setupWebSocketPanel();
+
     // Setup mobile navigation
     setupMobileNavigation();
+}
+
+function setupWebSocketPanel() {
+    // Create WebSocket messages panel
+    const wsPanel = document.createElement('div');
+    wsPanel.id = 'websocket-messages-panel';
+    wsPanel.className = 'fixed bottom-0 left-0 right-0 bg-white border-t border-gray-300 shadow-lg z-40 hidden';
+    wsPanel.innerHTML = `
+        <div class="p-4">
+            <div class="flex justify-between items-center mb-2">
+                <h3 class="font-bold">${t('webSocketMessagesTitle')}</h3>
+                <button id="close-websocket-panel" class="text-gray-500 hover:text-gray-700 text-xl">&times;</button>
+            </div>
+            <div id="websocket-messages-content">
+                <!-- WebSocket messages will be rendered here by JavaScript -->
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(wsPanel);
+
+    // Add event listener to close button
+    document.getElementById('close-websocket-panel').addEventListener('click', () => {
+        wsPanel.classList.add('hidden');
+    });
+
+    // Initially render empty messages
+    renderWebSocketMessages(document.getElementById('websocket-messages-content'));
+}
+
+// Update mobile navigation to add WebSocket button
+function setupMobileNavigation() {
+    const mobileTabsBtn = document.getElementById('mobileTabsBtn');
+    const mobileExecuteBtn = document.getElementById('mobileExecuteBtn');
+    const mobileResponseBtn = document.getElementById('mobileResponseBtn');
+    const mobileSettingsBtn = document.getElementById('mobileSettingsBtn');
+    const mobileResponsePopup = document.getElementById('mobileResponsePopup');
+    const closeMobileResponsePopup = document.getElementById('closeMobileResponsePopup');
+    const mobileResponseContent = document.getElementById('mobileResponseContent');
+
+    // Create WebSocket button in mobile navigation
+    const mobileWebSocketBtn = document.createElement('button');
+    mobileWebSocketBtn.className = 'mobile-nav-btn';
+    mobileWebSocketBtn.id = 'mobileWebSocketBtn';
+    mobileWebSocketBtn.title = t('showWebSocketMessages');
+    mobileWebSocketBtn.innerHTML = `<i>📡</i><span>WebSocket</span>`;
+    document.getElementById('mobileNav').insertBefore(mobileWebSocketBtn, document.getElementById('mobileSettingsBtn').nextSibling);
+
+    // Tabs button - switch between tabs
+    mobileTabsBtn.addEventListener('click', () => {
+        // Highlight active button
+        document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('active'));
+        mobileTabsBtn.classList.add('active');
+
+        // Show tabs container (for mobile we might want to show a tab selector)
+        showTabSelector();
+    });
+
+    // Execute button - execute the current request
+    mobileExecuteBtn.addEventListener('click', () => {
+        // Highlight active button
+        document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('active'));
+        mobileExecuteBtn.classList.add('active');
+
+        // Execute request for current tab
+        if (currentTabId) {
+            const tabData = tabs.find(t => t.id === currentTabId);
+            if (tabData) {
+                executeRequest(currentTabId, tabData.url);
+            }
+        }
+    });
+
+    // Response button - show response in popup
+    mobileResponseBtn.addEventListener('click', () => {
+        // Highlight active button
+        document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('active'));
+        mobileResponseBtn.classList.add('active');
+
+        // Show response popup
+        if (currentTabId) {
+            const tabData = tabs.find(t => t.id === currentTabId);
+            if (tabData && tabData.lastResult) {
+                mobileResponseContent.innerHTML = formatMobileResponse(tabData.lastResult);
+                mobileResponsePopup.style.display = 'block';
+            } else {
+                mobileResponseContent.innerHTML = '<p>No response available. Execute a request first.</p>';
+                mobileResponsePopup.style.display = 'block';
+            }
+        }
+    });
+
+    // WebSocket button - show WebSocket messages
+    mobileWebSocketBtn.addEventListener('click', () => {
+        // Highlight active button
+        document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('active'));
+        mobileWebSocketBtn.classList.add('active');
+
+        // Show WebSocket messages popup
+        showWebSocketMessages();
+    });
+
+    // Settings button - show settings
+    mobileSettingsBtn.addEventListener('click', () => {
+        // Highlight active button
+        document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('active'));
+        mobileSettingsBtn.classList.add('active');
+
+        // Show settings modal
+        showSettings();
+    });
+
+    // Close response popup
+    closeMobileResponsePopup.addEventListener('click', () => {
+        mobileResponsePopup.style.display = 'none';
+    });
+
+    // Also close popup when clicking outside of it
+    mobileResponsePopup.addEventListener('click', (e) => {
+        if (e.target === mobileResponsePopup) {
+            mobileResponsePopup.style.display = 'none';
+        }
+    });
+
+    // Initialize active state for mobile nav buttons
+    document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('active'));
+    mobileTabsBtn.classList.add('active');
 }
 
 // Запуск
@@ -1365,7 +1552,277 @@ function showTabSelector() {
     });
 }
 
-// Function to format response for mobile popup
+// === WebSocket функциональность ===
+function startWebSocket() {
+    if (isWebSocketConnected && webSocket) {
+        alert(t('webSocketConnected'));
+        return;
+    }
+
+    const settings = loadSettings();
+    const webSocketUrl = settings.webSocketUrl;
+
+    if (!webSocketUrl) {
+        alert('Please set WebSocket URL in settings first');
+        return;
+    }
+
+    try {
+        webSocket = new WebSocket(webSocketUrl);
+
+        webSocket.onopen = function(event) {
+            console.log('WebSocket connected');
+            isWebSocketConnected = true;
+            updateWebSocketButton();
+            webSocketMessages.push({
+                type: 'info',
+                message: t('webSocketConnected'),
+                timestamp: new Date().toLocaleString()
+            });
+            updateWebSocketMessagesDisplay();
+        };
+
+        webSocket.onmessage = function(event) {
+            console.log('WebSocket message received:', event.data);
+            webSocketMessages.push({
+                type: 'message',
+                message: event.data,
+                timestamp: new Date().toLocaleString()
+            });
+            updateWebSocketMessagesDisplay();
+        };
+
+        webSocket.onerror = function(error) {
+            console.error('WebSocket error:', error);
+            webSocketMessages.push({
+                type: 'error',
+                message: t('webSocketConnectionError') + ': ' + error.message,
+                timestamp: new Date().toLocaleString()
+            });
+            updateWebSocketMessagesDisplay();
+        };
+
+        webSocket.onclose = function(event) {
+            console.log('WebSocket closed:', event.code, event.reason);
+            isWebSocketConnected = false;
+            updateWebSocketButton();
+            webSocketMessages.push({
+                type: 'info',
+                message: t('webSocketDisconnected'),
+                timestamp: new Date().toLocaleString()
+            });
+            updateWebSocketMessagesDisplay();
+        };
+    } catch (error) {
+        console.error('Failed to create WebSocket:', error);
+        webSocketMessages.push({
+            type: 'error',
+            message: t('webSocketConnectionError') + ': ' + error.message,
+            timestamp: new Date().toLocaleString()
+        });
+        updateWebSocketMessagesDisplay();
+    }
+}
+
+function stopWebSocket() {
+    if (webSocket) {
+        webSocket.close();
+        webSocket = null;
+        isWebSocketConnected = false;
+        updateWebSocketButton();
+    }
+}
+
+function updateWebSocketButton() {
+    const wsButton = document.getElementById('websocket-btn');
+    if (wsButton) {
+        wsButton.textContent = isWebSocketConnected ? t('stopWebSocketBtn') : t('startWebSocketBtn');
+        wsButton.className = isWebSocketConnected
+            ? 'px-3 py-2 ml-1 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm bg-red-100 hover:bg-red-200'
+            : 'px-3 py-2 ml-1 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
+    }
+}
+
+function updateWebSocketMessagesDisplay() {
+    // Update the WebSocket messages panel if it exists
+    const wsMessagesPanel = document.getElementById('websocket-messages-panel');
+    if (wsMessagesPanel && !wsMessagesPanel.classList.contains('hidden')) {
+        renderWebSocketMessages(document.getElementById('websocket-messages-content'));
+    }
+
+    // Update mobile popup if it's open
+    const mobileWsPopup = document.getElementById('mobileWebSocketPopup');
+    if (mobileWsPopup && mobileWsPopup.style.display !== 'none') {
+        const mobileWsContent = document.getElementById('mobileWebSocketContent');
+        if (mobileWsContent) {
+            mobileWsContent.innerHTML = formatWebSocketMessagesForMobile();
+        }
+    }
+
+    // Update the WebSocket messages button to indicate if there are messages
+    const wsMessagesBtn = document.querySelector('#tabsContainer button[title="' + t('showWebSocketMessages') + '"]');
+    if (wsMessagesBtn && webSocketMessages.length > 0) {
+        // Add a small indicator that there are messages
+        let indicator = wsMessagesBtn.querySelector('.ws-indicator');
+        if (!indicator) {
+            indicator = document.createElement('span');
+            indicator.className = 'ws-indicator absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center';
+            indicator.textContent = Math.min(webSocketMessages.length, 99); // Cap at 99
+            wsMessagesBtn.style.position = 'relative';
+            wsMessagesBtn.appendChild(indicator);
+        } else {
+            indicator.textContent = Math.min(webSocketMessages.length, 99);
+        }
+    } else {
+        // Remove indicator if no messages
+        const indicator = document.querySelector('#tabsContainer .ws-indicator');
+        if (indicator) {
+            indicator.remove();
+        }
+    }
+}
+
+function renderWebSocketMessages(container) {
+    container.innerHTML = `
+        <div class="p-4">
+            <h3 class="font-bold mb-3">${t('webSocketMessagesTitle')}</h3>
+            <div id="websocket-messages-list" class="space-y-2 max-h-96 overflow-y-auto">
+                ${webSocketMessages.map(msg => {
+                    let className = 'p-2 rounded text-sm';
+                    if (msg.type === 'error') className += ' bg-red-100 border border-red-300';
+                    else if (msg.type === 'info') className += ' bg-blue-100 border border-blue-300';
+                    else className += ' bg-gray-100 border border-gray-300';
+
+                    return `
+                        <div class="${className}">
+                            <div class="text-xs text-gray-500">${msg.timestamp}</div>
+                            <div>${msg.message}</div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+            <div class="mt-3">
+                <button id="clear-websocket-messages" class="px-3 py-1 bg-gray-200 rounded text-sm hover:bg-gray-300">
+                    Clear Messages
+                </button>
+            </div>
+        </div>
+    `;
+
+    // Add event listener for clear button
+    const clearBtn = document.getElementById('clear-websocket-messages');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            webSocketMessages = [];
+            updateWebSocketMessagesDisplay();
+        });
+    }
+}
+
+function formatWebSocketMessagesForMobile() {
+    return `
+        <div class="p-4">
+            <h3 class="font-bold mb-3">${t('webSocketMessagesTitle')}</h3>
+            <div id="mobile-websocket-messages-list" class="space-y-2 max-h-96 overflow-y-auto">
+                ${webSocketMessages.map(msg => {
+                    let className = 'p-2 rounded text-sm mb-2';
+                    if (msg.type === 'error') className += ' bg-red-100 border border-red-300';
+                    else if (msg.type === 'info') className += ' bg-blue-100 border border-blue-300';
+                    else className += ' bg-gray-100 border border-gray-300';
+
+                    return `
+                        <div class="${className}">
+                            <div class="text-xs text-gray-500">${msg.timestamp}</div>
+                            <div>${msg.message}</div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+            <div class="mt-3">
+                <button id="clear-mobile-websocket-messages" class="px-3 py-1 bg-gray-200 rounded text-sm hover:bg-gray-300 w-full">
+                    Clear Messages
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+function showWebSocketMessages() {
+    if (showSe) return; // Prevent opening if settings modal is open
+
+    // Check if we're on mobile view
+    const isMobile = window.innerWidth <= 768;
+
+    if (isMobile) {
+        // On mobile, show as popup modal
+        showSe = true;
+        // Create mobile WebSocket messages popup
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+        modal.id = 'mobileWebSocketPopup';
+
+        const content = document.createElement('div');
+        content.className = 'bg-white p-6 rounded-lg shadow-lg w-full max-w-md max-h-[80vh] overflow-y-auto';
+        content.innerHTML = `
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">${t('webSocketMessagesTitle')}</h2>
+                <button id="close-websocket-popup" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+            </div>
+            <div id="mobileWebSocketContent">
+                ${formatWebSocketMessagesForMobile()}
+            </div>
+        `;
+
+        modal.appendChild(content);
+        document.body.appendChild(modal);
+
+        // Close button
+        document.getElementById('close-websocket-popup').addEventListener('click', () => {
+            document.body.removeChild(modal);
+            showSe = false;
+        });
+
+        // Clear button for mobile
+        const clearBtn = document.getElementById('clear-mobile-websocket-messages');
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => {
+                webSocketMessages = [];
+                updateWebSocketMessagesDisplay();
+            });
+        }
+
+        // Close when clicking outside
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                document.body.removeChild(modal);
+                showSe = false;
+            }
+        });
+
+        // Handle ESC key
+        function handleEscKey(event) {
+            if (event.key === 'Escape') {
+                document.body.removeChild(modal);
+                showSe = false;
+                document.removeEventListener('keydown', handleEscKey);
+            }
+        }
+        document.addEventListener('keydown', handleEscKey);
+    } else {
+        // On desktop, toggle the bottom panel
+        const wsPanel = document.getElementById('websocket-messages-panel');
+        if (wsPanel) {
+            if (wsPanel.classList.contains('hidden')) {
+                wsPanel.classList.remove('hidden');
+                // Update the content to show latest messages
+                renderWebSocketMessages(document.getElementById('websocket-messages-content'));
+            } else {
+                wsPanel.classList.add('hidden');
+            }
+        }
+    }
+}
+
 function formatMobileResponse(result) {
     if (result.error) {
         return `

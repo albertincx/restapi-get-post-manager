@@ -92,6 +92,23 @@
             margin-bottom: 2px;
         }
 
+        /* WebSocket indicator */
+        .ws-indicator {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            background-color: #ef4444;
+            color: white;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            font-size: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+        }
+
         /* Hide top tabs on mobile */
         @media (max-width: 768px) {
             #tabsContainer {
@@ -174,6 +191,6 @@
     <div id="mobileResponseContent"></div>
 </div>
 
-<script type="javascript" src="index.js?v=1"></script>
+<script src="script.js?v=1"></script>
 </body>
 </html>
