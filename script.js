@@ -589,6 +589,10 @@ function showSettings() {
                 <label class="block font-bold text-sm mb-2">${t('webSocketUrlLabel')}</label>
                 <input type="text" id="websocket-url-input" placeholder="${t('webSocketUrlPlaceholder')}" class="w-full px-3 py-2 border border-gray-300 rounded" />
             </div>
+            <div class="mb-4 flex space-x-2">
+                <button id="start-websocket-btn" class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 flex-1">${t('startWebSocketBtn')}</button>
+                <button id="stop-websocket-btn" class="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 flex-1">${t('stopWebSocketBtn')}</button>
+            </div>
             <div class="flex justify-end space-x-2">
                 <button id="cancel-settings" class="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100">${t('cancelBtn')}</button>
                 <button id="save-settings" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">${t('saveBtn')}</button>
@@ -603,6 +607,9 @@ function showSettings() {
     document.getElementById('base-host-input').value = settings.baseHost || '';
     document.getElementById('use-base-host-checkbox').checked = settings.useBaseHost;
     document.getElementById('websocket-url-input').value = settings.webSocketUrl || '';
+
+    // Update WebSocket buttons to reflect connection status
+    updateWebSocketButton();
 
     // Загрузка дополнительных URL
     const urlsContainer = document.getElementById('urls-container');
@@ -641,6 +648,48 @@ function showSettings() {
     // Обработчики кнопок
     document.getElementById('close-settings').addEventListener('click', closeSettingsModal);
     document.getElementById('cancel-settings').addEventListener('click', closeSettingsModal);
+
+    // WebSocket control buttons
+    document.getElementById('start-websocket-btn').addEventListener('click', (e) => {
+        e.preventDefault();
+        // Get the WebSocket URL from the input field
+        const webSocketUrl = document.getElementById('websocket-url-input').value.trim();
+        if (!webSocketUrl) {
+            alert('Please enter a WebSocket URL first');
+            return;
+        }
+
+        // Update the settings with the new URL
+        const baseHost = document.getElementById('base-host-input').value.trim();
+        const useBaseHost = document.getElementById('use-base-host-checkbox').checked;
+        const urlsContainer = document.getElementById('urls-container');
+        const urlInputs = urlsContainer.querySelectorAll('input');
+        const additionalUrls = [];
+        urlInputs.forEach(input => {
+            if (input.value.trim()) {
+                additionalUrls.push(input.value.trim());
+            }
+        });
+        const selectedLanguage = document.getElementById('language-select').value;
+        const enableMultipleRequests = document.getElementById('enable-multiple-requests').checked;
+
+        saveSettings({
+            baseHost,
+            useBaseHost,
+            additionalUrls,
+            language: selectedLanguage,
+            enableMultipleRequests,
+            webSocketUrl
+        });
+
+        // Start the WebSocket
+        startWebSocket();
+    });
+
+    document.getElementById('stop-websocket-btn').addEventListener('click', (e) => {
+        e.preventDefault();
+        stopWebSocket();
+    });
 
     // Сохраняем обработчик в глобальную переменную для использования в closeModal
     window.settingsEscHandler = handleEscKey;
@@ -1293,6 +1342,8 @@ function setupWebSocketPanel() {
     // Add event listener to close button
     document.getElementById('close-websocket-panel').addEventListener('click', () => {
         wsPanel.classList.add('hidden');
+        // Remove padding class when panel is closed
+        document.body.classList.remove('ws-panel-open');
     });
 
     // Initially render empty messages
@@ -1309,13 +1360,21 @@ function setupMobileNavigation() {
     const closeMobileResponsePopup = document.getElementById('closeMobileResponsePopup');
     const mobileResponseContent = document.getElementById('mobileResponseContent');
 
-    // Create WebSocket button in mobile navigation
-    const mobileWebSocketBtn = document.createElement('button');
-    mobileWebSocketBtn.className = 'mobile-nav-btn';
-    mobileWebSocketBtn.id = 'mobileWebSocketBtn';
-    mobileWebSocketBtn.title = t('showWebSocketMessages');
-    mobileWebSocketBtn.innerHTML = `<i>📡</i><span>WebSocket</span>`;
-    document.getElementById('mobileNav').insertBefore(mobileWebSocketBtn, document.getElementById('mobileSettingsBtn').nextSibling);
+    // Create WebSocket button in mobile navigation (only if WebSocket URL is specified in settings)
+    const settings = loadSettings();
+    if (settings.webSocketUrl && settings.webSocketUrl.trim() !== '') {
+        const mobileWebSocketBtn = document.createElement('button');
+        mobileWebSocketBtn.className = 'mobile-nav-btn';
+        mobileWebSocketBtn.id = 'mobileWebSocketBtn';
+        mobileWebSocketBtn.title = t('showWebSocketMessages');
+        mobileWebSocketBtn.innerHTML = `<i>📡</i><span>WebSocket</span>`;
+        document.getElementById('mobileNav').insertBefore(mobileWebSocketBtn, document.getElementById('mobileSettingsBtn').nextSibling);
+
+        // Initially hide the button if WebSocket is not connected
+        if (!isWebSocketConnected) {
+            mobileWebSocketBtn.style.display = 'none';
+        }
+    }
 
     // Tabs button - switch between tabs
     mobileTabsBtn.addEventListener('click', () => {
@@ -1362,14 +1421,16 @@ function setupMobileNavigation() {
     });
 
     // WebSocket button - show WebSocket messages
-    mobileWebSocketBtn.addEventListener('click', () => {
-        // Highlight active button
-        document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('active'));
-        mobileWebSocketBtn.classList.add('active');
+    if (settings.webSocketUrl && settings.webSocketUrl.trim() !== '') {
+        mobileWebSocketBtn.addEventListener('click', () => {
+            // Highlight active button
+            document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('active'));
+            mobileWebSocketBtn.classList.add('active');
 
-        // Show WebSocket messages popup
-        showWebSocketMessages();
-    });
+            // Show WebSocket messages popup
+            showWebSocketMessages();
+        });
+    }
 
     // Settings button - show settings
     mobileSettingsBtn.addEventListener('click', () => {
@@ -1574,6 +1635,7 @@ function startWebSocket() {
             console.log('WebSocket connected');
             isWebSocketConnected = true;
             updateWebSocketButton();
+            showHideMobileWebSocketButton(true); // Show the mobile WebSocket button when connected
             webSocketMessages.push({
                 type: 'info',
                 message: t('webSocketConnected'),
@@ -1606,6 +1668,7 @@ function startWebSocket() {
             console.log('WebSocket closed:', event.code, event.reason);
             isWebSocketConnected = false;
             updateWebSocketButton();
+            showHideMobileWebSocketButton(false); // Hide the mobile WebSocket button when disconnected
             webSocketMessages.push({
                 type: 'info',
                 message: t('webSocketDisconnected'),
@@ -1630,16 +1693,43 @@ function stopWebSocket() {
         webSocket = null;
         isWebSocketConnected = false;
         updateWebSocketButton();
+        showHideMobileWebSocketButton(false); // Hide the mobile WebSocket button when stopped
+    }
+}
+
+// Function to show/hide the mobile WebSocket button based on connection status
+function showHideMobileWebSocketButton(show) {
+    const mobileWebSocketBtn = document.getElementById('mobileWebSocketBtn');
+    if (mobileWebSocketBtn) {
+        if (show) {
+            mobileWebSocketBtn.style.display = 'flex';
+        } else {
+            mobileWebSocketBtn.style.display = 'none';
+        }
     }
 }
 
 function updateWebSocketButton() {
+    // Update main WebSocket button
     const wsButton = document.getElementById('websocket-btn');
     if (wsButton) {
         wsButton.textContent = isWebSocketConnected ? t('stopWebSocketBtn') : t('startWebSocketBtn');
         wsButton.className = isWebSocketConnected
             ? 'px-3 py-2 ml-1 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm bg-red-100 hover:bg-red-200'
             : 'px-3 py-2 ml-1 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
+    }
+
+    // Update WebSocket buttons in settings modal if it's open
+    const startWsBtn = document.getElementById('start-websocket-btn');
+    const stopWsBtn = document.getElementById('stop-websocket-btn');
+    if (startWsBtn && stopWsBtn) {
+        if (isWebSocketConnected) {
+            startWsBtn.style.display = 'none';
+            stopWsBtn.style.display = 'flex';
+        } else {
+            startWsBtn.style.display = 'flex';
+            stopWsBtn.style.display = 'none';
+        }
     }
 }
 
@@ -1814,10 +1904,14 @@ function showWebSocketMessages() {
         if (wsPanel) {
             if (wsPanel.classList.contains('hidden')) {
                 wsPanel.classList.remove('hidden');
+                // Add padding class to main content to prevent content from being covered
+                document.body.classList.add('ws-panel-open');
                 // Update the content to show latest messages
                 renderWebSocketMessages(document.getElementById('websocket-messages-content'));
             } else {
                 wsPanel.classList.add('hidden');
+                // Remove padding class when panel is hidden
+                document.body.classList.remove('ws-panel-open');
             }
         }
     }

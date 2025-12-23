@@ -138,10 +138,6 @@
             .modal-content {
                 max-height: 75vh;
             }
-
-            .tab-content {
-                max-height: calc(100vh - 100px); /* Account for header and other elements */
-            }
         }
 
         @media (max-height: 600px) {
@@ -162,6 +158,16 @@
             .tab-content {
                 max-height: calc(100vh - 100px);
             }
+        }
+
+        /* WebSocket panel bottom padding */
+        body.ws-panel-open #tabsContainer + .tab-content,
+        body.ws-panel-open .tab-content:not(.hidden) {
+            margin-bottom: 300px !important; /* Account for WebSocket panel height */
+        }
+
+        #websocket-messages-panel {
+            height: 300px;
         }
 
         /* Mobile response popup */
