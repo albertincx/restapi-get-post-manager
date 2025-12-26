@@ -331,7 +331,13 @@ function activateTab(id) {
 
     const tabEl = document.querySelector(`.tab[data-id="${id}"]`);
     const contentEl = document.querySelector(`.tab-content[data-id="${id}"]`);
-    if (tabEl) tabEl.classList.add('bg-gray-50', 'font-bold');
+    if (tabEl) {
+        tabEl.classList.add('bg-gray-50', 'font-bold');
+        const tabData = tabs.find(t => t.id === id);
+        // console.log(tabEl, tabData);
+        let a = document.querySelector('#active-tab-name');
+        if (a && tabData) a.innerHTML = '(' + tabData.name + ')';
+    }
     if (contentEl) contentEl.classList.remove('hidden');
 }
 
@@ -501,8 +507,8 @@ function renderTabContentFresh(tabId, updateWithoutActivate = false) {
     const oldContent = document.querySelector(`.tab-content[data-id="${tabId}"]`);
     if (oldContent) oldContent.remove();
     const tabData = tabs.find(t => t.id === tabId);
-    console.log('tabData');
-    console.log(tabData, tabId);
+    // console.log('tabData');
+    // console.log(tabData, tabId);
     if (tabData) {
         renderTabContent(tabData);
         if (currentTabId === tabId && !updateWithoutActivate) {
@@ -1659,8 +1665,8 @@ function showTabSelector() {
     document.querySelectorAll('.tab-option').forEach(option => {
         option.addEventListener('click', (e) => {
             // If the click was on the rename or delete button, don't activate the tab
-            console.log(e.target.tagName)
-            console.log(e.target)
+            // console.log(e.target.tagName)
+            // console.log(e.target)
             if (
                 e.target.classList.contains('rename-tab-btn') ||
                 e.target.classList.contains('delete-tab-btn') ||
