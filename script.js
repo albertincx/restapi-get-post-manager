@@ -40,6 +40,9 @@ const TRANSLATIONS = {
         importError: "Ошибка при чтении файла. Возможно, файл поврежден или имеет неверный формат.",
         noTabsToImport: "Файл содержит некорректные данные. Ожидается массив табов.",
         close: "Закрыть",
+        renameTab: "Переименовать вкладку",
+        deleteTab: "Удалить вкладку",
+        confirmDeleteTab: "Вы уверены, что хотите удалить эту вкладку?",
         minimize: "[-]",
         maximize: "[+]",
         emptyKeyPlaceholder: "Ключ",
@@ -101,6 +104,9 @@ const TRANSLATIONS = {
         importError: "Error reading file. The file may be corrupted or in an incorrect format.",
         noTabsToImport: "File contains invalid data. Expected an array of tabs.",
         close: "Close",
+        renameTab: "Rename tab",
+        deleteTab: "Delete tab",
+        confirmDeleteTab: "Are you sure you want to delete this tab?",
         minimize: "[-]",
         maximize: "[+]",
         emptyKeyPlaceholder: "Key",
@@ -496,7 +502,7 @@ function renderTabContentFresh(tabId, updateWithoutActivate = false) {
     if (oldContent) oldContent.remove();
     const tabData = tabs.find(t => t.id === tabId);
     console.log('tabData');
-    console.log(tabData);
+    console.log(tabData, tabId);
     if (tabData) {
         renderTabContent(tabData);
         if (currentTabId === tabId && !updateWithoutActivate) {
@@ -930,11 +936,11 @@ async function executeCommand(command, params = {}) {
             };
             webSocket.send(JSON.stringify(commandData));
             showNotification(`Command "${command}" sent via WebSocket`, 'info');
-            return { success: true, method: 'websocket', command: commandData };
+            return {success: true, method: 'websocket', command: commandData};
         } catch (error) {
             console.error('Error sending command via WebSocket:', error);
             showNotification(`Error sending command via WebSocket: ${error.message}`, 'error');
-            return { success: false, error: error.message, method: 'websocket' };
+            return {success: false, error: error.message, method: 'websocket'};
         }
     } else if (settings.commandServerUrl) {
         // Отправляем команду через HTTP
@@ -953,24 +959,26 @@ async function executeCommand(command, params = {}) {
 
             const result = await response.json();
             showNotification(`Command "${command}" executed via HTTP`, 'info');
-            return { success: true, result: result, method: 'http' };
+            return {success: true, result: result, method: 'http'};
         } catch (error) {
             console.error('Error executing command via HTTP:', error);
             showNotification(`Error executing command via HTTP: ${error.message}`, 'error');
-            return { success: false, error: error.message, method: 'http' };
+            return {success: false, error: error.message, method: 'http'};
         }
     } else {
         // Ни WebSocket, ни сервер команд не настроен
         const errorMsg = 'No command execution method configured. Please set Command Server URL or connect WebSocket and enable sending commands via WebSocket.';
         showNotification(errorMsg, 'warning');
-        return { success: false, error: errorMsg, method: 'none' };
+        return {success: false, error: errorMsg, method: 'none'};
     }
 }
 
 // === Закрытие модального окна ===
 function closeModal(ma) {
-    // Удаляем обработчик клавиатуры при закрытии модального окна
-    document.removeEventListener('keydown', window.settingsEscHandler);
+    // Удаляем обработчик клавиатуры при закрытии модального окна, если он существует
+    if (window.settingsEscHandler) {
+        document.removeEventListener('keydown', window.settingsEscHandler);
+    }
     document.body.removeChild(ma);
     showTa = false
     showSe = false
@@ -1623,19 +1631,23 @@ function showTabSelector() {
     const modal = document.createElement('div');
     modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
     modal.innerHTML = `
-            <div class="bg-white p-6 rounded-lg shadow-lg w-80 max-w-full mx-4 modal-content">
+            <div class="tabs-modal bg-white p-6 rounded-lg shadow-lg w-80 max-w-full mx-4 modal-content">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-xl font-bold">Select Tab</h2>
                     <button id="close-tab-selector" class="text-gray-500 hover:text-gray-700">&times;</button>
                 </div>
                 <div id="tab-list" class="space-y-2 max-h-96 overflow-y-auto">
                     ${tabs.map(tab => `
-                        <div class="p-2 border border-gray-200 rounded hover:bg-gray-100 cursor-pointer tab-option" data-id="${tab.id}">
-                            ${tab.name}
+                        <div class="p-2 border border-gray-200 rounded hover:bg-gray-100 cursor-pointer flex justify-between items-center tab-option" data-id="${tab.id}">
+                            <span class="tab-name">${tab.name}</span>
+                            <div class="edit-tab flex space-x-2">
+                                <button class="rename-tab-btn text-blue-500 hover:text-blue-700 text-sm" title="${t('renameTab')}">✏️</button>
+                                <button class="delete-tab-btn text-red-500 hover:text-red-700 text-sm" title="${t('deleteTab')}">×</button>
+                            </div>
                         </div>
                     `).join('')}
                 </div>
-                <div class="mt-4 flex justify-end">
+                <div class="mt-4 flex justify-end space-x-2">
                     <button id="add-new-tab-mobile" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">+ New Tab</button>
                 </div>
             </div>
@@ -1643,15 +1655,21 @@ function showTabSelector() {
 
     document.body.appendChild(modal);
 
-    // function closeModal() {
-    //     document.body.removeChild(modal);
-    //     showTa = false
-    //     showSe = false
-    // }
-
     // Add event listeners to tab options
     document.querySelectorAll('.tab-option').forEach(option => {
-        option.addEventListener('click', () => {
+        option.addEventListener('click', (e) => {
+            // If the click was on the rename or delete button, don't activate the tab
+            console.log(e.target.tagName)
+            console.log(e.target)
+            if (
+                e.target.classList.contains('rename-tab-btn') ||
+                e.target.classList.contains('delete-tab-btn') ||
+                e.target.classList.contains('edit-tab') ||
+                e.target.tagName === 'INPUT'
+            ) {
+                return;
+            }
+
             const tabId = parseInt(option.getAttribute('data-id'));
             activateTab(tabId);
 
@@ -1660,6 +1678,78 @@ function showTabSelector() {
             document.getElementById('mobileTabsBtn').classList.add('active');
 
             closeModal(modal)
+        });
+    });
+
+    // Add event listeners for rename buttons
+    document.querySelectorAll('.rename-tab-btn').forEach((btn, index) => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent tab activation
+            const tabOption = btn.closest('.tab-option');
+            const tabId = parseInt(tabOption.getAttribute('data-id'));
+            const tabNameSpan = tabOption.querySelector('.tab-name');
+            const currentName = tabNameSpan.textContent;
+
+            // Create input field to edit the name
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = currentName;
+            input.className = 'flex-1 px-2 py-1 border border-gray-300 rounded text-sm';
+
+            // Replace the name span with the input
+            tabNameSpan.replaceWith(input);
+            input.focus();
+            input.select();
+
+            // Function to save the name and revert to span
+            const saveName = () => {
+                const newName = input.value.trim() || t('unnamed');
+                updateTabData(tabId, {name: newName});
+
+                // Update the tab UI as well
+                const tabInput = document.querySelector(`.tab[data-id="${tabId}"] .tab-input`);
+                if (tabInput) {
+                    tabInput.value = newName;
+                }
+
+                // Replace input with updated span
+                const newSpan = document.createElement('span');
+                newSpan.className = 'tab-name';
+                newSpan.textContent = newName;
+                input.replaceWith(newSpan);
+
+                // Update the tab in the UI immediately
+                renderTabContentFresh(tabId, true);
+            };
+
+            // Save when Enter is pressed or input loses focus
+            input.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    saveName();
+                }
+            });
+
+            input.addEventListener('blur', saveName);
+        });
+    });
+
+    // Add event listeners for delete buttons
+    document.querySelectorAll('.delete-tab-btn').forEach((btn, index) => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent tab activation
+            const tabOption = btn.closest('.tab-option');
+            const tabId = parseInt(tabOption.getAttribute('data-id'));
+
+            if (tabs.length <= 1) {
+                showNotification('Cannot delete the last tab', 'warning');
+                return;
+            }
+
+            if (confirm(t('confirmDeleteTab'))) {
+                removeTab(tabId);
+                // Remove the tab option from the modal UI
+                tabOption.remove();
+            }
         });
     });
 
@@ -1700,7 +1790,7 @@ function startWebSocket() {
     try {
         webSocket = new WebSocket(webSocketUrl);
 
-        webSocket.onopen = function(event) {
+        webSocket.onopen = function (event) {
             console.log('WebSocket connected');
             isWebSocketConnected = true;
             updateWebSocketButton();
@@ -1719,7 +1809,7 @@ function startWebSocket() {
             showNotification(t('webSocketConnected'), 'success');
         };
 
-        webSocket.onmessage = function(event) {
+        webSocket.onmessage = function (event) {
             console.log('WebSocket message received:', event.data);
 
             try {
@@ -1754,7 +1844,7 @@ function startWebSocket() {
             updateWebSocketMessagesDisplay();
         };
 
-        webSocket.onerror = function(error) {
+        webSocket.onerror = function (error) {
             console.error('WebSocket error:', error);
             webSocketMessages.push({
                 type: 'error',
@@ -1767,7 +1857,7 @@ function startWebSocket() {
             showNotification(t('webSocketConnectionError') + ': ' + error.message, 'error');
         };
 
-        webSocket.onclose = function(event) {
+        webSocket.onclose = function (event) {
             console.log('WebSocket closed:', event.code, event.reason);
             isWebSocketConnected = false;
             updateWebSocketButton();
@@ -1895,19 +1985,19 @@ function renderWebSocketMessages(container) {
         <div class="p-4">
             <div id="websocket-messages-list" class="space-y-2 max-h-96 overflow-y-auto">
                 ${webSocketMessages.map(msg => {
-                    let className = 'p-2 rounded text-sm';
-                    if (msg.type === 'error') className += ' bg-red-100 border border-red-300';
-                    else if (msg.type === 'info') className += ' bg-blue-100 border border-blue-300';
-                    else if (msg.type === 'command_response') className += ' bg-green-100 border border-green-300';
-                    else className += ' bg-gray-100 border border-gray-300';
+        let className = 'p-2 rounded text-sm';
+        if (msg.type === 'error') className += ' bg-red-100 border border-red-300';
+        else if (msg.type === 'info') className += ' bg-blue-100 border border-blue-300';
+        else if (msg.type === 'command_response') className += ' bg-green-100 border border-green-300';
+        else className += ' bg-gray-100 border border-gray-300';
 
-                    return `
+        return `
                         <div class="${className}">
                             <div class="text-xs text-gray-500">${msg.timestamp}</div>
                             <div>${msg.message}</div>
                         </div>
                     `;
-                }).join('')}
+    }).join('')}
             </div>
             <div class="mt-3">
                 <button id="clear-websocket-messages" class="px-3 py-1 bg-gray-200 rounded text-sm hover:bg-gray-300">
@@ -1932,19 +2022,19 @@ function formatWebSocketMessagesForMobile() {
         <div class="">
             <div id="mobile-websocket-messages-list" class="space-y-2 max-h-96 overflow-y-auto">
                 ${webSocketMessages.map(msg => {
-                    let className = 'p-2 rounded text-sm mb-2';
-                    if (msg.type === 'error') className += ' bg-red-100 border border-red-300';
-                    else if (msg.type === 'info') className += ' bg-blue-100 border border-blue-300';
-                    else if (msg.type === 'command_response') className += ' bg-green-100 border border-green-300';
-                    else className += ' bg-gray-100 border border-gray-300';
+        let className = 'p-2 rounded text-sm mb-2';
+        if (msg.type === 'error') className += ' bg-red-100 border border-red-300';
+        else if (msg.type === 'info') className += ' bg-blue-100 border border-blue-300';
+        else if (msg.type === 'command_response') className += ' bg-green-100 border border-green-300';
+        else className += ' bg-gray-100 border border-gray-300';
 
-                    return `
+        return `
                         <div class="${className}">
                             <div class="text-xs text-gray-500">${msg.timestamp}</div>
                             <div>${msg.message}</div>
                         </div>
                     `;
-                }).join('')}
+    }).join('')}
             </div>
             <div class="mt-3">
                 <button id="clear-mobile-websocket-messages" class="px-3 py-1 bg-gray-200 rounded text-sm hover:bg-gray-300 w-full">
@@ -2015,6 +2105,7 @@ function showWebSocketMessages() {
                 document.removeEventListener('keydown', handleEscKey);
             }
         }
+
         document.addEventListener('keydown', handleEscKey);
     } else {
         // On desktop, toggle the bottom panel
