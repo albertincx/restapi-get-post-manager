@@ -473,3 +473,46 @@ button:active {
         opacity: 1;
     }
 }
+
+/* Body tabs styling */
+.body-tab {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.body-tab.active {
+    font-weight: 500;
+}
+
+.body-tab:hover {
+    background-color: #e2e8f0;
+}
+
+.body-tab-close {
+    margin-left: 6px;
+    cursor: pointer;
+    padding: 2px;
+    border-radius: 3px;
+}
+
+.body-tab-close:hover {
+    background-color: #ff6b6b;
+    color: white;
+}
+
+[class*="add-body-tab-"] {
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    transition: all 0.2s ease;
+}
+
+[class*="add-body-tab-"]:hover {
+    background-color: #c6f6d5;
+}

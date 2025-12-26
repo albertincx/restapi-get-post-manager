@@ -199,6 +199,31 @@ function loadFromStorage() {
             tabs = JSON.parse(data);
             if (tabs.length > 0) {
                 nextId = Math.max(...tabs.map(t => t.id)) + 1;
+
+                // Migrate old tabs to new structure if needed
+                tabs = tabs.map(tab => {
+                    // If the tab has the old 'body' field, convert it to the new structure
+                    if (tab.hasOwnProperty('body') && !tab.hasOwnProperty('bodyTabs')) {
+                        tab.bodyTabs = [
+                            {id: 1, name: 'Body 1', content: tab.body || ''}
+                        ];
+                        tab.activeBodyTabId = 1;
+                        // Remove the old body field
+                        delete tab.body;
+                    }
+                    // Ensure bodyTabs and activeBodyTabId exist for all tabs
+                    if (!tab.bodyTabs) {
+                        tab.bodyTabs = [
+                            {id: 1, name: 'Body 1', content: ''}
+                        ];
+                        tab.activeBodyTabId = 1;
+                    }
+                    if (!tab.activeBodyTabId) {
+                        tab.activeBodyTabId = tab.bodyTabs[0]?.id || 1;
+                    }
+                    return tab;
+                });
+
                 tabs.forEach(tab => renderTabUI(tab));
                 activateTab(tabs[0].id);
                 renderTabContentFresh(tabs[0].id);
@@ -219,7 +244,10 @@ function createNewTab(name = t('newTabName')) {
         url: 'https://httpbin.org/get',
         method: 'GET',
         headers: [{key: '', value: ''}],
-        body: '',
+        bodyTabs: [
+            {id: 1, name: 'Body 1', content: ''}
+        ],
+        activeBodyTabId: 1,
         lastResult: null
     };
     tabs.push(newTab);
@@ -240,7 +268,8 @@ function duplicateTab(id) {
         url: originalTab.url,
         method: originalTab.method,
         headers: JSON.parse(JSON.stringify(originalTab.headers)), // Deep copy headers
-        body: originalTab.body,
+        bodyTabs: JSON.parse(JSON.stringify(originalTab.bodyTabs)), // Deep copy body tabs
+        activeBodyTabId: originalTab.activeBodyTabId,
         lastResult: originalTab.lastResult ? JSON.parse(JSON.stringify(originalTab.lastResult)) : null
     };
     tabs.push(newTab);
@@ -265,6 +294,15 @@ function removeTab(id) {
 function updateTabData(id, updates) {
     const tab = tabs.find(t => t.id === id);
     if (tab) {
+        // Ensure bodyTabs and activeBodyTabId are properly maintained
+        if (updates.bodyTabs) {
+            tab.bodyTabs = updates.bodyTabs;
+        }
+        if (updates.activeBodyTabId !== undefined) {
+            tab.activeBodyTabId = updates.activeBodyTabId;
+        }
+
+        // Apply other updates
         Object.assign(tab, updates);
         saveToStorage();
     }
@@ -378,13 +416,29 @@ function renderTabContent(tabData) {
         renderTabContentFresh(tabData.id);
     });
 
-    // Тело запроса
+    // Тело запроса с вкладками
     const isBodyAllowed = BODY_METHODS.includes(tabData.method);
     const bodyGroup = document.createElement('div');
     bodyGroup.className = 'mb-4';
+
+    // Find the active body tab
+    const activeBodyTab = tabData.bodyTabs.find(tab => tab.id === tabData.activeBodyTabId) || tabData.bodyTabs[0];
+
     bodyGroup.innerHTML = `
         <label class="block font-bold text-sm mb-2">${t('bodyLabel')}</label>
-        <textarea id="body-${tabData.id}" ${!isBodyAllowed ? 'disabled' : ''} class="w-full px-3 py-2 border ${isBodyAllowed ? 'border-gray-300' : 'border-gray-200 bg-gray-100'} rounded font-mono min-h-[120px]">${tabData.body}</textarea>
+        <div class="flex mb-2">
+            <div id="body-tabs-${tabData.id}" class="flex flex-wrap gap-1 mr-2">
+                ${tabData.bodyTabs.map((tab, index) => `
+                    <div class="body-tab ${tab.id === tabData.activeBodyTabId ? 'active' : ''} px-2 py-1 border rounded text-sm cursor-pointer ${tab.id === tabData.activeBodyTabId ? 'bg-blue-100 border-blue-300' : 'bg-gray-100 border-gray-300'}"
+                         data-tab-id="${tab.id}">
+                        <span class="body-tab-name">${tab.name}</span>
+                        ${tabData.bodyTabs.length > 1 ? `<span class="body-tab-close ml-1 text-red-500">×</span>` : ''}
+                    </div>
+                `).join('')}
+                <button id="add-body-tab-${tabData.id}" class="px-2 py-1 bg-green-100 text-green-700 rounded text-sm border border-green-300 hover:bg-green-200">+</button>
+            </div>
+        </div>
+        <textarea id="body-${tabData.id}" ${!isBodyAllowed ? 'disabled' : ''} class="w-full px-3 py-2 border ${isBodyAllowed ? 'border-gray-300' : 'border-gray-200 bg-gray-100'} rounded font-mono min-h-[120px]">${activeBodyTab ? activeBodyTab.content : ''}</textarea>
       `;
 
     // Кнопки выполнить запрос для каждого URL
@@ -451,7 +505,12 @@ function renderTabContent(tabData) {
         bodyTextarea.classList.toggle('border-gray-300', allowed);
         if (!allowed) {
             bodyTextarea.value = '';
-            updateTabData(tabData.id, {body: ''});
+            // Clear all body tabs content when method doesn't allow body
+            const updatedBodyTabs = tabData.bodyTabs.map(tab => ({
+                ...tab,
+                content: ''
+            }));
+            updateTabData(tabData.id, {bodyTabs: updatedBodyTabs});
         }
     });
 
@@ -460,8 +519,81 @@ function renderTabContent(tabData) {
     }, 300));
 
     bodyTextarea.addEventListener('input', debounce((e) => {
-        updateTabData(tabData.id, {body: e.target.value});
+        // Update the active body tab content
+        const tab = tabs.find(t => t.id === tabData.id);
+        if (tab) {
+            const activeTab = tab.bodyTabs.find(bt => bt.id === tab.activeBodyTabId);
+            if (activeTab) {
+                activeTab.content = e.target.value;
+                updateTabData(tabData.id, {bodyTabs: tab.bodyTabs});
+            }
+        }
     }, 300));
+
+    // Add event listeners for body tabs
+    const bodyTabsContainer = requestPanel.querySelector(`#body-tabs-${tabData.id}`);
+    if (bodyTabsContainer) {
+        // Add click event for switching body tabs
+        bodyTabsContainer.addEventListener('click', (e) => {
+            // Handle tab switching
+            const tabElement = e.target.closest('.body-tab');
+            if (tabElement) {
+                const tabId = parseInt(tabElement.dataset.tabId);
+                if (!isNaN(tabId)) {
+                    // Update active tab
+                    updateTabData(tabData.id, {activeBodyTabId: tabId});
+
+                    // Re-render the content to update the UI
+                    renderTabContentFresh(tabData.id);
+                }
+                return;
+            }
+
+            // Handle tab closing
+            if (e.target.classList.contains('body-tab-close')) {
+                const tabElement = e.target.closest('.body-tab');
+                if (tabElement) {
+                    const tabId = parseInt(tabElement.dataset.tabId);
+                    if (!isNaN(tabId) && tabData.bodyTabs.length > 1) {
+                        // Remove the tab
+                        const updatedTabs = tabData.bodyTabs.filter(tab => tab.id !== tabId);
+
+                        // Update active tab if the removed tab was active
+                        let newActiveTabId = tabData.activeBodyTabId;
+                        if (tabId === tabData.activeBodyTabId) {
+                            newActiveTabId = updatedTabs[0].id;
+                        }
+
+                        updateTabData(tabData.id, {
+                            bodyTabs: updatedTabs,
+                            activeBodyTabId: newActiveTabId
+                        });
+
+                        // Re-render the content to update the UI
+                        renderTabContentFresh(tabData.id);
+                    }
+                }
+                return;
+            }
+
+            // Handle adding new body tab
+            if (e.target.id === `add-body-tab-${tabData.id}`) {
+                const newTabId = Math.max(...tabData.bodyTabs.map(t => t.id)) + 1;
+                const newBodyTabs = [
+                    ...tabData.bodyTabs,
+                    {id: newTabId, name: `Body ${newTabId}`, content: ''}
+                ];
+
+                updateTabData(tabData.id, {
+                    bodyTabs: newBodyTabs,
+                    activeBodyTabId: newTabId
+                });
+
+                // Re-render the content to update the UI
+                renderTabContentFresh(tabData.id);
+            }
+        });
+    }
 
     document.body.appendChild(content);
 }
@@ -1081,6 +1213,30 @@ function importTabs() {
                 const confirmed = confirm(confirmMessage);
 
                 if (confirmed) {
+                    // Migrate imported tabs to new structure if needed
+                    importedTabs = importedTabs.map(tab => {
+                        // If the tab has the old 'body' field, convert it to the new structure
+                        if (tab.hasOwnProperty('body') && !tab.hasOwnProperty('bodyTabs')) {
+                            tab.bodyTabs = [
+                                {id: 1, name: 'Body 1', content: tab.body || ''}
+                            ];
+                            tab.activeBodyTabId = 1;
+                            // Remove the old body field
+                            delete tab.body;
+                        }
+                        // Ensure bodyTabs and activeBodyTabId exist for all tabs
+                        if (!tab.bodyTabs) {
+                            tab.bodyTabs = [
+                                {id: 1, name: 'Body 1', content: ''}
+                            ];
+                            tab.activeBodyTabId = 1;
+                        }
+                        if (!tab.activeBodyTabId) {
+                            tab.activeBodyTabId = tab.bodyTabs[0]?.id || 1;
+                        }
+                        return tab;
+                    });
+
                     // Заменяем существующие табы на импортированные
                     tabs = importedTabs;
 
@@ -1247,14 +1403,17 @@ async function executeSingleRequest(tabId, targetUrl, suffix = '') {
         };
 
         // Добавляем тело если метод поддерживает
-        if (BODY_METHODS.includes(tabData.method) && tabData.body) {
-            // Проверяем, является ли тело JSON строкой
-            try {
-                JSON.parse(tabData.body);
-                config.body = tabData.body;
-            } catch (e) {
-                // Если не JSON, отправляем как текст
-                config.body = tabData.body;
+        if (BODY_METHODS.includes(tabData.method)) {
+            const activeBodyTab = tabData.bodyTabs.find(tab => tab.id === tabData.activeBodyTabId) || tabData.bodyTabs[0];
+            if (activeBodyTab && activeBodyTab.content) {
+                // Проверяем, является ли тело JSON строкой
+                try {
+                    JSON.parse(activeBodyTab.content);
+                    config.body = activeBodyTab.content;
+                } catch (e) {
+                    // Если не JSON, отправляем как текст
+                    config.body = activeBodyTab.content;
+                }
             }
         }
 
