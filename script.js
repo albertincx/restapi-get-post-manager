@@ -57,7 +57,13 @@ const TRANSLATIONS = {
         webSocketMessagesTitle: "Сообщения вебсокета",
         webSocketConnected: "Вебсокет подключен",
         webSocketDisconnected: "Вебсокет отключен",
-        webSocketConnectionError: "Ошибка подключения к вебсокету"
+        webSocketConnectionError: "Ошибка подключения к вебсокету",
+        commandExecutionLabel: "Настройки выполнения команд",
+        commandServerUrlLabel: "URL сервера команд",
+        commandServerUrlPlaceholder: "http://localhost:3000/execute",
+        sendCommandsViaWebSocketLabel: "Отправлять команды через вебсокет",
+        testCommandInputLabel: "Тестовая команда",
+        testCommandPlaceholder: "Введите команду для тестирования"
     },
     en: {
         pageTitle: "Postman-like client (Tailwind)",
@@ -112,7 +118,13 @@ const TRANSLATIONS = {
         webSocketMessagesTitle: "WebSocket Messages",
         webSocketConnected: "WebSocket connected",
         webSocketDisconnected: "WebSocket disconnected",
-        webSocketConnectionError: "WebSocket connection error"
+        webSocketConnectionError: "WebSocket connection error",
+        commandExecutionLabel: "Command Execution Settings",
+        commandServerUrlLabel: "Command Server URL",
+        commandServerUrlPlaceholder: "http://localhost:3000/execute",
+        sendCommandsViaWebSocketLabel: "Send commands via WebSocket",
+        testCommandInputLabel: "Test Command",
+        testCommandPlaceholder: "Enter command to test"
     }
 };
 
@@ -593,6 +605,28 @@ function showSettings() {
                 <button id="start-websocket-btn" class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 flex-1">${t('startWebSocketBtn')}</button>
                 <button id="stop-websocket-btn" class="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 flex-1">${t('stopWebSocketBtn')}</button>
             </div>
+            <div class="mb-4">
+                <label class="block font-bold text-sm mb-2">${t('commandExecutionLabel')}</label>
+                <div class="mb-2">
+                    <label class="block text-sm mb-1">${t('commandServerUrlLabel')}</label>
+                    <input type="text" id="command-server-url-input" placeholder="${t('commandServerUrlPlaceholder')}" class="w-full px-3 py-2 border border-gray-300 rounded" />
+                </div>
+                <div class="mb-2">
+                    <label class="flex items-center">
+                        <input type="checkbox" id="send-commands-via-websocket" class="mr-2" />
+                        <span class="text-sm">${t('sendCommandsViaWebSocketLabel')}</span>
+                    </label>
+                </div>
+                <div class="mb-2">
+                    <label class="block text-sm mb-1">${t('testCommandInputLabel')}</label>
+                    <input type="text" id="test-command-input" placeholder="${t('testCommandPlaceholder')}" class="w-full px-3 py-2 border border-gray-300 rounded text-sm" value="test" />
+                </div>
+                <div class="mt-2">
+                    <button id="test-command-btn" class="px-3 py-1 bg-purple-500 text-white rounded text-sm hover:bg-purple-600">
+                        Test Command
+                    </button>
+                </div>
+            </div>
             <div class="flex justify-end space-x-2">
                 <button id="cancel-settings" class="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100">${t('cancelBtn')}</button>
                 <button id="save-settings" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">${t('saveBtn')}</button>
@@ -607,6 +641,9 @@ function showSettings() {
     document.getElementById('base-host-input').value = settings.baseHost || '';
     document.getElementById('use-base-host-checkbox').checked = settings.useBaseHost;
     document.getElementById('websocket-url-input').value = settings.webSocketUrl || '';
+    document.getElementById('command-server-url-input').value = settings.commandServerUrl || '';
+    document.getElementById('send-commands-via-websocket').checked = settings.sendCommandsViaWebSocket || false;
+    document.getElementById('test-command-input').value = settings.defaultTestCommand || 'test';
 
     // Update WebSocket buttons to reflect connection status
     updateWebSocketButton();
@@ -673,13 +710,21 @@ function showSettings() {
         const selectedLanguage = document.getElementById('language-select').value;
         const enableMultipleRequests = document.getElementById('enable-multiple-requests').checked;
 
+        // Get command settings
+        const commandServerUrl = document.getElementById('command-server-url-input').value.trim();
+        const sendCommandsViaWebSocket = document.getElementById('send-commands-via-websocket').checked;
+        const defaultTestCommand = document.getElementById('test-command-input').value.trim() || 'test';
+
         saveSettings({
             baseHost,
             useBaseHost,
             additionalUrls,
             language: selectedLanguage,
             enableMultipleRequests,
-            webSocketUrl
+            webSocketUrl,
+            commandServerUrl,
+            sendCommandsViaWebSocket,
+            defaultTestCommand
         });
 
         // Start the WebSocket
@@ -726,6 +771,33 @@ function showSettings() {
         addUrlInput(urlsContainer, '', urlsContainer.children.length);
     });
 
+    // Обработчик кнопки тестирования команды
+    document.getElementById('test-command-btn').addEventListener('click', async () => {
+        const commandServerUrl = document.getElementById('command-server-url-input').value.trim();
+        const sendCommandsViaWebSocket = document.getElementById('send-commands-via-websocket').checked;
+        const testCommand = document.getElementById('test-command-input').value.trim() || 'test';
+
+        // Save the current settings temporarily
+        const settings = loadSettings();
+        saveSettings({
+            ...settings,
+            commandServerUrl,
+            sendCommandsViaWebSocket
+        });
+
+        // Execute the custom test command
+        const result = await executeCommand(testCommand, {
+            message: `This is a test of command: ${testCommand}`,
+            timestamp: new Date().toISOString()
+        });
+
+        if (result.success) {
+            showNotification(`Command "${testCommand}" executed successfully via ${result.method}`, 'success');
+        } else {
+            showNotification(`Command "${testCommand}" failed: ${result.error}`, 'error');
+        }
+    });
+
     document.getElementById('save-settings').addEventListener('click', () => {
         const baseHost = document.getElementById('base-host-input').value.trim();
         const useBaseHost = document.getElementById('use-base-host-checkbox').checked;
@@ -749,6 +821,15 @@ function showSettings() {
         // Получаем WebSocket URL
         const webSocketUrl = document.getElementById('websocket-url-input').value.trim();
 
+        // Получаем Command Server URL
+        const commandServerUrl = document.getElementById('command-server-url-input').value.trim();
+
+        // Получаем состояние чекбокса отправки команд через WebSocket
+        const sendCommandsViaWebSocket = document.getElementById('send-commands-via-websocket').checked;
+
+        // Получаем значение тестовой команды
+        const defaultTestCommand = document.getElementById('test-command-input').value.trim() || 'test';
+
         // Сохраняем настройки
         saveSettings({
             baseHost,
@@ -756,7 +837,10 @@ function showSettings() {
             additionalUrls,
             language: selectedLanguage,
             enableMultipleRequests,
-            webSocketUrl
+            webSocketUrl,
+            commandServerUrl,
+            sendCommandsViaWebSocket,
+            defaultTestCommand
         });
 
         // Обновляем язык приложения
@@ -793,7 +877,10 @@ function loadSettings() {
                 additionalUrls: settings.additionalUrls || [],
                 language: settings.language || (localStorage.getItem('app_language') || 'ru'),
                 enableMultipleRequests: settings.enableMultipleRequests || false,
-                webSocketUrl: settings.webSocketUrl || ''
+                webSocketUrl: settings.webSocketUrl || '',
+                commandServerUrl: settings.commandServerUrl || '',
+                sendCommandsViaWebSocket: settings.sendCommandsViaWebSocket || false,
+                defaultTestCommand: settings.defaultTestCommand || 'test'
             };
         } catch (e) {
             console.error('Ошибка при загрузке настроек', e);
@@ -803,7 +890,10 @@ function loadSettings() {
                 additionalUrls: [],
                 language: localStorage.getItem('app_language') || 'ru',
                 enableMultipleRequests: false,
-                webSocketUrl: ''
+                webSocketUrl: '',
+                commandServerUrl: '',
+                sendCommandsViaWebSocket: false,
+                defaultTestCommand: 'test'
             };
         }
     }
@@ -813,13 +903,68 @@ function loadSettings() {
         additionalUrls: [],
         language: localStorage.getItem('app_language') || 'ru',
         enableMultipleRequests: false,
-        webSocketUrl: ''
+        webSocketUrl: '',
+        commandServerUrl: '',
+        sendCommandsViaWebSocket: false,
+        defaultTestCommand: 'test'
     };
 }
 
 // === Сохранение настроек ===
 function saveSettings(settings) {
     localStorage.setItem('postman_settings', JSON.stringify(settings));
+}
+
+// === Выполнение команды через HTTP или WebSocket ===
+async function executeCommand(command, params = {}) {
+    const settings = loadSettings();
+
+    if (settings.sendCommandsViaWebSocket && isWebSocketConnected && webSocket) {
+        // Отправляем команду через WebSocket
+        try {
+            const commandData = {
+                type: 'command',
+                command: command,
+                params: params,
+                timestamp: Date.now()
+            };
+            webSocket.send(JSON.stringify(commandData));
+            showNotification(`Command "${command}" sent via WebSocket`, 'info');
+            return { success: true, method: 'websocket', command: commandData };
+        } catch (error) {
+            console.error('Error sending command via WebSocket:', error);
+            showNotification(`Error sending command via WebSocket: ${error.message}`, 'error');
+            return { success: false, error: error.message, method: 'websocket' };
+        }
+    } else if (settings.commandServerUrl) {
+        // Отправляем команду через HTTP
+        try {
+            const response = await fetch(settings.commandServerUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    command: command,
+                    params: params,
+                    timestamp: Date.now()
+                })
+            });
+
+            const result = await response.json();
+            showNotification(`Command "${command}" executed via HTTP`, 'info');
+            return { success: true, result: result, method: 'http' };
+        } catch (error) {
+            console.error('Error executing command via HTTP:', error);
+            showNotification(`Error executing command via HTTP: ${error.message}`, 'error');
+            return { success: false, error: error.message, method: 'http' };
+        }
+    } else {
+        // Ни WebSocket, ни сервер команд не настроен
+        const errorMsg = 'No command execution method configured. Please set Command Server URL or connect WebSocket and enable sending commands via WebSocket.';
+        showNotification(errorMsg, 'warning');
+        return { success: false, error: errorMsg, method: 'none' };
+    }
 }
 
 // === Закрытие модального окна ===
@@ -1362,18 +1507,34 @@ function setupMobileNavigation() {
 
     // Create WebSocket button in mobile navigation (only if WebSocket URL is specified in settings)
     const settings = loadSettings();
-    if (settings.webSocketUrl && settings.webSocketUrl.trim() !== '') {
-        const mobileWebSocketBtn = document.createElement('button');
+    let mobileWebSocketBtn = document.getElementById('mobileWebSocketBtn');
+
+    if (settings.webSocketUrl && settings.webSocketUrl.trim() !== '' && !mobileWebSocketBtn) {
+        mobileWebSocketBtn = document.createElement('button');
         mobileWebSocketBtn.className = 'mobile-nav-btn';
         mobileWebSocketBtn.id = 'mobileWebSocketBtn';
         mobileWebSocketBtn.title = t('showWebSocketMessages');
         mobileWebSocketBtn.innerHTML = `<i>📡</i><span>WebSocket</span>`;
-        document.getElementById('mobileNav').insertBefore(mobileWebSocketBtn, document.getElementById('mobileSettingsBtn').nextSibling);
+
+        // Insert the WebSocket button before the settings button
+        const mobileNav = document.getElementById('mobileNav');
+        mobileNav.insertBefore(mobileWebSocketBtn, document.getElementById('mobileSettingsBtn'));
 
         // Initially hide the button if WebSocket is not connected
-        if (!isWebSocketConnected) {
-            mobileWebSocketBtn.style.display = 'none';
-        }
+        mobileWebSocketBtn.style.display = isWebSocketConnected ? 'flex' : 'none';
+
+        // Add event listener for the WebSocket button
+        mobileWebSocketBtn.addEventListener('click', () => {
+            // Highlight active button
+            document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('active'));
+            mobileWebSocketBtn.classList.add('active');
+
+            // Show WebSocket messages popup
+            showWebSocketMessages();
+        });
+    } else if (mobileWebSocketBtn) {
+        // If button exists but WebSocket is not connected, hide it
+        mobileWebSocketBtn.style.display = isWebSocketConnected ? 'flex' : 'none';
     }
 
     // Tabs button - switch between tabs
@@ -1419,18 +1580,6 @@ function setupMobileNavigation() {
             }
         }
     });
-
-    // WebSocket button - show WebSocket messages
-    if (settings.webSocketUrl && settings.webSocketUrl.trim() !== '') {
-        mobileWebSocketBtn.addEventListener('click', () => {
-            // Highlight active button
-            document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('active'));
-            mobileWebSocketBtn.classList.add('active');
-
-            // Show WebSocket messages popup
-            showWebSocketMessages();
-        });
-    }
 
     // Settings button - show settings
     mobileSettingsBtn.addEventListener('click', () => {
@@ -1462,86 +1611,6 @@ function setupMobileNavigation() {
 // Запуск
 init();
 
-// Mobile Navigation Functions
-function setupMobileNavigation() {
-    const mobileTabsBtn = document.getElementById('mobileTabsBtn');
-    const mobileExecuteBtn = document.getElementById('mobileExecuteBtn');
-    const mobileResponseBtn = document.getElementById('mobileResponseBtn');
-    const mobileSettingsBtn = document.getElementById('mobileSettingsBtn');
-    const mobileResponsePopup = document.getElementById('mobileResponsePopup');
-    const closeMobileResponsePopup = document.getElementById('closeMobileResponsePopup');
-    const mobileResponseContent = document.getElementById('mobileResponseContent');
-
-    // Tabs button - switch between tabs
-    mobileTabsBtn.addEventListener('click', () => {
-        // Highlight active button
-        document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('active'));
-        mobileTabsBtn.classList.add('active');
-
-        // Show tabs container (for mobile we might want to show a tab selector)
-        showTabSelector();
-    });
-
-    // Execute button - execute the current request
-    mobileExecuteBtn.addEventListener('click', () => {
-        // Highlight active button
-        document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('active'));
-        mobileExecuteBtn.classList.add('active');
-
-        // Execute request for current tab
-        if (currentTabId) {
-            const tabData = tabs.find(t => t.id === currentTabId);
-            if (tabData) {
-                executeRequest(currentTabId, tabData.url);
-            }
-        }
-    });
-
-    // Response button - show response in popup
-    mobileResponseBtn.addEventListener('click', () => {
-        // Highlight active button
-        document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('active'));
-        mobileResponseBtn.classList.add('active');
-
-        // Show response popup
-        if (currentTabId) {
-            const tabData = tabs.find(t => t.id === currentTabId);
-            if (tabData && tabData.lastResult) {
-                mobileResponseContent.innerHTML = formatMobileResponse(tabData.lastResult);
-                mobileResponsePopup.style.display = 'block';
-            } else {
-                mobileResponseContent.innerHTML = '<p>No response available. Execute a request first.</p>';
-                mobileResponsePopup.style.display = 'block';
-            }
-        }
-    });
-
-    // Settings button - show settings
-    mobileSettingsBtn.addEventListener('click', () => {
-        // Highlight active button
-        document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('active'));
-        mobileSettingsBtn.classList.add('active');
-
-        // Show settings modal
-        showSettings();
-    });
-
-    // Close response popup
-    closeMobileResponsePopup.addEventListener('click', () => {
-        mobileResponsePopup.style.display = 'none';
-    });
-
-    // Also close popup when clicking outside of it
-    mobileResponsePopup.addEventListener('click', (e) => {
-        if (e.target === mobileResponsePopup) {
-            mobileResponsePopup.style.display = 'none';
-        }
-    });
-
-    // Initialize active state for mobile nav buttons
-    document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('active'));
-    mobileTabsBtn.classList.add('active');
-}
 
 // Function to show tab selector on mobile
 function showTabSelector() {
@@ -1643,17 +1712,45 @@ function startWebSocket() {
             });
             updateWebSocketMessagesDisplay();
 
+            // Update mobile navigation to show WebSocket button
+            setupMobileNavigation();
+
             // Show notification for successful connection
             showNotification(t('webSocketConnected'), 'success');
         };
 
         webSocket.onmessage = function(event) {
             console.log('WebSocket message received:', event.data);
-            webSocketMessages.push({
-                type: 'message',
-                message: event.data,
-                timestamp: new Date().toLocaleString()
-            });
+
+            try {
+                // Try to parse the message as JSON to see if it's a command response
+                const messageData = JSON.parse(event.data);
+
+                // Check if it's a command response
+                if (messageData.command || messageData.type === 'command_response' || messageData.isCommandResponse) {
+                    webSocketMessages.push({
+                        type: 'command_response',
+                        message: `Command Response: ${JSON.stringify(messageData)}`,
+                        timestamp: new Date().toLocaleString(),
+                        data: messageData
+                    });
+                } else {
+                    // Regular message
+                    webSocketMessages.push({
+                        type: 'message',
+                        message: event.data,
+                        timestamp: new Date().toLocaleString()
+                    });
+                }
+            } catch (e) {
+                // If parsing fails, treat as regular message
+                webSocketMessages.push({
+                    type: 'message',
+                    message: event.data,
+                    timestamp: new Date().toLocaleString()
+                });
+            }
+
             updateWebSocketMessagesDisplay();
         };
 
@@ -1682,6 +1779,9 @@ function startWebSocket() {
             });
             updateWebSocketMessagesDisplay();
 
+            // Update mobile navigation to hide WebSocket button
+            setupMobileNavigation();
+
             // Show notification for disconnection
             showNotification(t('webSocketDisconnected'), 'info');
         };
@@ -1706,6 +1806,9 @@ function stopWebSocket() {
         isWebSocketConnected = false;
         updateWebSocketButton();
         showHideMobileWebSocketButton(false); // Hide the mobile WebSocket button when stopped
+
+        // Update mobile navigation to hide WebSocket button
+        setupMobileNavigation();
 
         // Show notification for manual disconnection
         showNotification(t('webSocketDisconnected'), 'info');
@@ -1790,12 +1893,12 @@ function updateWebSocketMessagesDisplay() {
 function renderWebSocketMessages(container) {
     container.innerHTML = `
         <div class="p-4">
-            <h3 class="font-bold mb-3">${t('webSocketMessagesTitle')}</h3>
             <div id="websocket-messages-list" class="space-y-2 max-h-96 overflow-y-auto">
                 ${webSocketMessages.map(msg => {
                     let className = 'p-2 rounded text-sm';
                     if (msg.type === 'error') className += ' bg-red-100 border border-red-300';
                     else if (msg.type === 'info') className += ' bg-blue-100 border border-blue-300';
+                    else if (msg.type === 'command_response') className += ' bg-green-100 border border-green-300';
                     else className += ' bg-gray-100 border border-gray-300';
 
                     return `
@@ -1826,13 +1929,13 @@ function renderWebSocketMessages(container) {
 
 function formatWebSocketMessagesForMobile() {
     return `
-        <div class="p-4">
-            <h3 class="font-bold mb-3">${t('webSocketMessagesTitle')}</h3>
+        <div class="">
             <div id="mobile-websocket-messages-list" class="space-y-2 max-h-96 overflow-y-auto">
                 ${webSocketMessages.map(msg => {
                     let className = 'p-2 rounded text-sm mb-2';
                     if (msg.type === 'error') className += ' bg-red-100 border border-red-300';
                     else if (msg.type === 'info') className += ' bg-blue-100 border border-blue-300';
+                    else if (msg.type === 'command_response') className += ' bg-green-100 border border-green-300';
                     else className += ' bg-gray-100 border border-gray-300';
 
                     return `
