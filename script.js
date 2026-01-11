@@ -43,6 +43,7 @@ const TRANSLATIONS = {
         renameTab: "Переименовать вкладку",
         deleteTab: "Удалить вкладку",
         confirmDeleteTab: "Вы уверены, что хотите удалить эту вкладку?",
+        confirmDeleteBodyTab: "Вы уверены, что хотите удалить этот раздел тела запроса?",
         minimize: "[-]",
         maximize: "[+]",
         emptyKeyPlaceholder: "Ключ",
@@ -54,9 +55,9 @@ const TRANSLATIONS = {
         enableMultipleRequests: "Выполнять запросы ко всем URL одновременно",
         webSocketUrlLabel: "URL веб-сокета",
         webSocketUrlPlaceholder: "ws://localhost:8080/ws",
-        startWebSocketBtn: "Начать слушать вебсокет",
+        startWebSocketBtn: "Слушать вебсокет",
         stopWebSocketBtn: "Остановить вебсокет",
-        showWebSocketMessages: "Показать сообщения вебсокета",
+        showWebSocketMessages: "Сообщения вебсокета",
         webSocketMessagesTitle: "Сообщения вебсокета",
         webSocketConnected: "Вебсокет подключен",
         webSocketDisconnected: "Вебсокет отключен",
@@ -107,6 +108,7 @@ const TRANSLATIONS = {
         renameTab: "Rename tab",
         deleteTab: "Delete tab",
         confirmDeleteTab: "Are you sure you want to delete this tab?",
+        confirmDeleteBodyTab: "Are you sure you want to delete this body tab?",
         minimize: "[-]",
         maximize: "[+]",
         emptyKeyPlaceholder: "Key",
@@ -281,6 +283,12 @@ function duplicateTab(id) {
 // === Удаление таба ===
 function removeTab(id) {
     if (tabs.length <= 1) return;
+
+    // Show confirmation dialog
+    if (!confirm(t('confirmDeleteTab'))) {
+        return; // Cancel deletion if user clicks "Cancel"
+    }
+
     tabs = tabs.filter(t => t.id !== id);
     document.querySelector(`.tab[data-id="${id}"]`)?.remove();
     document.querySelector(`.tab-content[data-id="${id}"]`)?.remove();
@@ -340,7 +348,10 @@ function renderTabUI(tabData) {
     duplicateButton.title = 'Duplicate tab';
     duplicateButton.addEventListener('click', (e) => {
         e.stopPropagation();
-        duplicateTab(tabData.id);
+        // Show confirmation dialog before duplicating tab
+        if (confirm('Are you sure you want to duplicate this tab?')) {
+            duplicateTab(tabData.id);
+        }
     });
 
     const closeButton = document.createElement('button');
@@ -533,11 +544,13 @@ function renderTabContent(tabData) {
     // Add event listeners for body tabs
     const bodyTabsContainer = requestPanel.querySelector(`#body-tabs-${tabData.id}`);
     if (bodyTabsContainer) {
+        // console.log('console.log(e.target);');
         // Add click event for switching body tabs
         bodyTabsContainer.addEventListener('click', (e) => {
+            let isClose = e.target.classList.contains('body-tab-close')
             // Handle tab switching
             const tabElement = e.target.closest('.body-tab');
-            if (tabElement) {
+            if (tabElement && !isClose) {
                 const tabId = parseInt(tabElement.dataset.tabId);
                 if (!isNaN(tabId)) {
                     // Update active tab
@@ -550,27 +563,31 @@ function renderTabContent(tabData) {
             }
 
             // Handle tab closing
-            if (e.target.classList.contains('body-tab-close')) {
+            if (isClose) {
                 const tabElement = e.target.closest('.body-tab');
+
                 if (tabElement) {
                     const tabId = parseInt(tabElement.dataset.tabId);
                     if (!isNaN(tabId) && tabData.bodyTabs.length > 1) {
-                        // Remove the tab
-                        const updatedTabs = tabData.bodyTabs.filter(tab => tab.id !== tabId);
+                        // Show confirmation dialog before removing body tab
+                        if (confirm(t('confirmDeleteBodyTab'))) {
+                            // Remove the tab
+                            const updatedTabs = tabData.bodyTabs.filter(tab => tab.id !== tabId);
 
-                        // Update active tab if the removed tab was active
-                        let newActiveTabId = tabData.activeBodyTabId;
-                        if (tabId === tabData.activeBodyTabId) {
-                            newActiveTabId = updatedTabs[0].id;
+                            // Update active tab if the removed tab was active
+                            let newActiveTabId = tabData.activeBodyTabId;
+                            if (tabId === tabData.activeBodyTabId) {
+                                newActiveTabId = updatedTabs[0].id;
+                            }
+
+                            updateTabData(tabData.id, {
+                                bodyTabs: updatedTabs,
+                                activeBodyTabId: newActiveTabId
+                            });
+
+                            // Re-render the content to update the UI
+                            renderTabContentFresh(tabData.id);
                         }
-
-                        updateTabData(tabData.id, {
-                            bodyTabs: updatedTabs,
-                            activeBodyTabId: newActiveTabId
-                        });
-
-                        // Re-render the content to update the UI
-                        renderTabContentFresh(tabData.id);
                     }
                 }
                 return;
@@ -578,19 +595,22 @@ function renderTabContent(tabData) {
 
             // Handle adding new body tab
             if (e.target.id === `add-body-tab-${tabData.id}`) {
-                const newTabId = Math.max(...tabData.bodyTabs.map(t => t.id)) + 1;
-                const newBodyTabs = [
-                    ...tabData.bodyTabs,
-                    {id: newTabId, name: `Body ${newTabId}`, content: ''}
-                ];
+                // Show confirmation dialog before adding body tab
+                if (confirm('Are you sure you want to add a new body tab?')) {
+                    const newTabId = Math.max(...tabData.bodyTabs.map(t => t.id)) + 1;
+                    const newBodyTabs = [
+                        ...tabData.bodyTabs,
+                        {id: newTabId, name: `Body ${newTabId}`, content: ''}
+                    ];
 
-                updateTabData(tabData.id, {
-                    bodyTabs: newBodyTabs,
-                    activeBodyTabId: newTabId
-                });
+                    updateTabData(tabData.id, {
+                        bodyTabs: newBodyTabs,
+                        activeBodyTabId: newTabId
+                    });
 
-                // Re-render the content to update the UI
-                renderTabContentFresh(tabData.id);
+                    // Re-render the content to update the UI
+                    renderTabContentFresh(tabData.id);
+                }
             }
         });
     }
@@ -625,9 +645,12 @@ function renderHeaders(container, headers, tabId) {
         }, 300));
 
         removeBtn.addEventListener('click', () => {
-            headers.splice(index, 1);
-            updateTabData(tabId, {headers: [...headers]});
-            renderTabContentFresh(tabId);
+            // Show confirmation dialog before removing header
+            if (confirm('Are you sure you want to delete this header?')) {
+                headers.splice(index, 1);
+                updateTabData(tabId, {headers: [...headers]});
+                renderTabContentFresh(tabId);
+            }
         });
 
         container.appendChild(row);
@@ -650,47 +673,6 @@ function renderTabContentFresh(tabId, updateWithoutActivate = false) {
 }
 
 // === Инициализация приложения ===
-function init() {
-    // Загружаем язык из настроек
-    const settings = loadSettings();
-    currentLanguage = settings.language || 'ru';
-    document.documentElement.lang = currentLanguage;
-
-    // Кнопка "+" для добавления таба
-    const addButton = document.createElement('button');
-    addButton.className = 'px-3 py-2 text-xl text-gray-600 hover:bg-gray-300 rounded';
-    addButton.textContent = '+';
-    addButton.title = t('addTabTooltip');
-    addButton.addEventListener('click', () => createNewTab());
-    document.querySelector('#tabsContainer').appendChild(addButton);
-
-    // Кнопка экспорта
-    const exportButton = document.createElement('button');
-    exportButton.className = 'px-3 py-2 ml-2 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
-    exportButton.textContent = t('exportBtn');
-    exportButton.title = t('exportTooltip');
-    exportButton.addEventListener('click', exportTabs);
-    document.querySelector('#tabsContainer').appendChild(exportButton);
-
-    // Кнопка импорта
-    const importButton = document.createElement('button');
-    importButton.className = 'px-3 py-2 ml-1 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
-    importButton.textContent = t('importBtn');
-    importButton.title = t('importTooltip');
-    importButton.addEventListener('click', importTabs);
-    document.querySelector('#tabsContainer').appendChild(importButton);
-
-    // Кнопка настроек
-    const settingsButton = document.createElement('button');
-    settingsButton.className = 'px-3 py-2 ml-1 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
-    settingsButton.textContent = t('settingsBtn');
-    settingsButton.title = t('settingsTooltip');
-    settingsButton.addEventListener('click', showSettings);
-    document.querySelector('#tabsContainer').appendChild(settingsButton);
-
-    // Загрузка данных
-    loadFromStorage();
-}
 
 let showSe = false
 let showTa = false
@@ -1575,27 +1557,37 @@ function init() {
 
     // Кнопка экспорта
     const exportButton = document.createElement('button');
+    const btnDiv = document.createElement('div');
     exportButton.className = 'px-3 py-2 ml-2 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
     exportButton.textContent = t('exportBtn');
     exportButton.title = t('exportTooltip');
     exportButton.addEventListener('click', exportTabs);
-    document.querySelector('#tabsContainer').appendChild(exportButton);
+    btnDiv.appendChild(exportButton);
+    document.querySelector('#tabsContainer').appendChild(btnDiv);
 
     // Кнопка импорта
     const importButton = document.createElement('button');
-    importButton.className = 'px-3 py-2 ml-1 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
-    importButton.textContent = t('importBtn');
+    importButton.className = 'px-3 py-2 ml-3 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
+    importButton.textContent = '' + t('importBtn');
     importButton.title = t('importTooltip');
     importButton.addEventListener('click', importTabs);
-    document.querySelector('#tabsContainer').appendChild(importButton);
+    btnDiv.appendChild(importButton);
+    // document.querySelector('#tabsContainer').appendChild(importButton);
 
     // Кнопка настроек
     const settingsButton = document.createElement('button');
     settingsButton.className = 'px-3 py-2 ml-1 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
-    settingsButton.textContent = t('settingsBtn');
+    settingsButton.innerHTML = '⚙️'; // Gear icon
     settingsButton.title = t('settingsTooltip');
     settingsButton.addEventListener('click', showSettings);
     document.querySelector('#tabsContainer').appendChild(settingsButton);
+    // Кнопка "+" для добавления таба
+    // const addButton = document.createElement('button');
+    // addButton.className = 'px-3 py-2 text-xl text-gray-600 hover:bg-gray-300 rounded';
+    // addButton.textContent = '+';
+    // addButton.title = t('addTabTooltip');
+    // addButton.addEventListener('click', () => createNewTab());
+    // document.querySelector('#tabsContainer').appendChild(addButton);
 
     // Кнопка WebSocket
     const webSocketButton = document.createElement('button');
@@ -1783,6 +1775,16 @@ function setupMobileNavigation() {
 
 // Запуск
 init();
+
+// Add beforeunload event to warn when leaving page with unsaved changes
+window.addEventListener('beforeunload', function (e) {
+    // Check if there are any tabs (meaning there's data that might be considered "unsaved" in a temporary sense)
+    if (tabs && tabs.length > 0) {
+        const confirmationMessage = 'You have unsaved changes. Are you sure you want to leave?';
+        e.returnValue = confirmationMessage;     // Gecko, Trident, Chrome 34+
+        return confirmationMessage;              // Gecko, WebKit, Chrome <34
+    }
+});
 
 
 // Function to show tab selector on mobile
