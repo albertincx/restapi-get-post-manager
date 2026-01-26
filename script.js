@@ -1,4 +1,5 @@
 const STORAGE_KEY = 'postman_tabs_v3';
+const ACTIVE_TAB_KEY = 'postman_active_tab';
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 const BODY_METHODS = ['POST', 'PUT', 'PATCH'];
 
@@ -227,8 +228,13 @@ function loadFromStorage() {
                 });
 
                 tabs.forEach(tab => renderTabUI(tab));
-                activateTab(tabs[0].id);
-                renderTabContentFresh(tabs[0].id);
+
+                // Restore last active tab if it exists
+                const lastActiveTabId = parseInt(localStorage.getItem(ACTIVE_TAB_KEY));
+                const tabToActivate = tabs.find(t => t.id === lastActiveTabId) ? lastActiveTabId : tabs[0].id;
+
+                activateTab(tabToActivate);
+                renderTabContentFresh(tabToActivate);
                 return;
             }
         } catch (e) {
@@ -375,6 +381,9 @@ function renderTabUI(tabData) {
 // === Активация таба ===
 function activateTab(id) {
     currentTabId = id;
+    // Save active tab ID to localStorage
+    localStorage.setItem(ACTIVE_TAB_KEY, id);
+
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('bg-gray-50', 'font-bold'));
     document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
 
@@ -393,7 +402,7 @@ function activateTab(id) {
 // === Рендер контента таба ===
 function renderTabContent(tabData) {
     const content = document.createElement('div');
-    content.className = 'tab-content hidden flex flex-row bg-white overflow-hidden';
+    content.className = 'tab-content hidden flex flex-row bg-white overflow-y-auto';
     content.dataset.id = tabData.id;
 
     // Основная панель запроса
@@ -1541,8 +1550,23 @@ function formatResponseBody(body) {
     try {
         // Проверяем, является ли тело JSON
         const parsed = JSON.parse(body);
+        document.body.classList.add('ws-panel-open');
+
+        // Check if it's an array for table view
+        if (Array.isArray(parsed)) {
+            renderResponseTable(parsed);
+        } else {
+            // Hide table if it's not an array
+            const panel = document.getElementById('response-table-panel');
+            if (panel) panel.classList.add('hidden');
+        }
+
         return JSON.stringify(parsed, null, 2);
     } catch (e) {
+        // Hide table if parse error
+        const panel = document.getElementById('response-table-panel');
+        if (panel) panel.classList.add('hidden');
+
         // Если не JSON, возвращаем как есть
         return body;
     }
@@ -1626,8 +1650,322 @@ function init() {
     // Setup WebSocket messages panel
     setupWebSocketPanel();
 
+    // Setup Response Table Panel
+    setupResponseTablePanel();
+
     // Setup mobile navigation
     setupMobileNavigation();
+}
+
+let isDownloadingAll = false;
+let stopDownloadFlag = false;
+
+function setupResponseTablePanel() {
+    // Create Response Table panel
+    const panel = document.createElement('div');
+    panel.id = 'response-table-panel';
+    panel.className = 'fixed bottom-0 left-0 right-0 bg-white border-t border-gray-300 shadow-lg z-40 hidden h-80 flex flex-col';
+    panel.innerHTML = `
+        <div class="p-3 bg-gray-100 border-b border-gray-300 flex justify-between items-center shrink-0">
+            <h3 class="font-bold text-sm">Response Data Table</h3>
+            <div class="flex gap-2 items-center">
+                 <span id="download-progress" class="text-xs text-gray-600 hidden"></span>
+                 <button id="stop-download-btn" class="text-red-600 hover:text-red-800 text-xs font-semibold px-2 py-1 rounded border border-red-200 bg-red-50 hover:bg-red-100 hidden">Stop</button>
+                 <button id="download-all-btn" class="text-green-600 hover:text-green-800 text-xs font-semibold px-2 py-1 rounded border border-green-200 bg-green-50 hover:bg-green-100">Download All Pages</button>
+                 <button id="download-csv-btn" class="text-blue-600 hover:text-blue-800 text-xs font-semibold px-2 py-1 rounded border border-blue-200 bg-blue-50 hover:bg-blue-100">Download CSV</button>
+                 <button id="close-response-table-panel" class="text-gray-500 hover:text-gray-700 text-xl leading-none">&times;</button>
+            </div>
+        </div>
+        <div id="response-table-content" class="flex-1 overflow-auto p-0">
+            <!-- Table will be rendered here -->
+            <div class="p-4 text-gray-500 text-center">No data to display</div>
+        </div>
+    `;
+
+    document.body.appendChild(panel);
+
+    // Add event listener to stop button
+    document.getElementById('stop-download-btn').addEventListener('click', () => {
+        stopDownloadFlag = true;
+    });
+
+    // Add event listener to download all button
+    document.getElementById('download-all-btn').addEventListener('click', () => {
+        if (currentTabId) {
+            fetchAllPages(currentTabId);
+        }
+    });
+    panel.classList.add('hidden');
+    document.body.classList.remove('response-table-open'); // Optional: adjust body padding if needed
+}
+
+
+function renderResponseTable(data) {
+    const panel = document.getElementById('response-table-panel');
+    const content = document.getElementById('response-table-content');
+
+    if (!panel || !content) return;
+
+    if (!Array.isArray(data) || data.length === 0) {
+        panel.classList.add('hidden');
+        return;
+    }
+
+    // Show the panel
+    panel.classList.remove('hidden');
+
+    // Get all unique keys from all objects to form columns
+    const allKeys = new Set();
+    data.forEach(item => {
+        if (typeof item === 'object' && item !== null) {
+            Object.keys(item).forEach(key => allKeys.add(key));
+        }
+    });
+
+    const columns = Array.from(allKeys);
+
+    if (columns.length === 0) {
+        content.innerHTML = '<div class="p-4 text-gray-500">List contains non-object items, viewing as text: <pre>' + JSON.stringify(data, null, 2) + '</pre></div>';
+        return;
+    }
+
+    // Generate Table HTML
+    let tableHtml = '<table class="response-table min-w-full divide-y divide-gray-200"><thead><tr>';
+
+    // Header Row
+    columns.forEach(col => {
+        tableHtml += `<th class="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky top-0 border-b border-gray-200">${col}</th>`;
+    });
+    tableHtml += '</tr></thead><tbody class="bg-white divide-y divide-gray-200">';
+
+    // Data Rows
+    data.forEach(item => {
+        tableHtml += '<tr class="hover:bg-gray-50">';
+        columns.forEach(col => {
+            let val = item[col];
+            let displayVal = '';
+
+            if (val === null || val === undefined) {
+                displayVal = '<span class="text-gray-300">-</span>';
+            } else if (typeof val === 'object') {
+                displayVal = `<span class="text-xs text-gray-500 font-mono" title="${JSON.stringify(val).replace(/"/g, '&quot;')}">{...}</span>`;
+            } else {
+                displayVal = String(val);
+                // Truncate long strings
+                if (displayVal.length > 50) {
+                    displayVal = `<span title="${displayVal.replace(/"/g, '&quot;')}">${displayVal.substring(0, 50)}...</span>`;
+                }
+            }
+            tableHtml += `<td class="px-4 py-2 text-sm text-gray-700 whitespace-nowrap border-r border-gray-100 last:border-r-0">${displayVal}</td>`;
+        });
+        tableHtml += '</tr>';
+    });
+
+    tableHtml += '</tbody></table>';
+    content.innerHTML = tableHtml;
+
+    // Setup CSV Download
+    const downloadBtn = document.getElementById('download-csv-btn');
+    if (downloadBtn) {
+        // Remove old listeners by cloning
+        const newBtn = downloadBtn.cloneNode(true);
+        downloadBtn.parentNode.replaceChild(newBtn, downloadBtn);
+
+        newBtn.addEventListener('click', () => {
+            downloadCSV(data, columns);
+        });
+    }
+}
+
+function downloadCSV(data, columns) {
+    if (!data || !data.length) return;
+
+    const csvRows = [];
+
+    // Header
+    csvRows.push(columns.join(','));
+
+    // Rows
+    data.forEach(row => {
+        const values = columns.map(col => {
+            const val = row[col];
+            // Escape double quotes
+            const stringVal = (val === null || val === undefined) ? '' : String(val);
+            const escaped = stringVal.replace(/"/g, '""');
+            return `"${escaped}"`;
+        });
+        csvRows.push(values.join(','));
+    });
+
+    const csvString = csvRows.join('\n');
+    const blob = new Blob([csvString], {type: 'text/csv'});
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.setAttribute('hidden', '');
+    a.setAttribute('href', url);
+    a.setAttribute('download', 'response_data.csv');
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
+
+// document.body.removeChild(a);
+// }
+
+async function fetchAllPages(tabId) {
+    const tabData = tabs.find(t => t.id === tabId);
+    if (!tabData) return;
+
+    toggleDownloadUI(true);
+    let allRecords = [];
+    let page = 1;
+    stopDownloadFlag = false;
+
+    // Determine the start URL
+    let baseUrl = tabData.url;
+    // Basic check to see if we should start from a specific page if 'page' is already in URL
+    // But for "Download All", starting from page 1 is safer to ensure completeness
+    // We will parse the URL to handle params correctly
+
+    const progressEl = document.getElementById('download-progress');
+    const settings = loadSettings();
+
+    try {
+        while (!stopDownloadFlag) {
+            progressEl.textContent = `Fetching page ${page}... (Records: ${allRecords.length})`;
+            console.log(baseUrl, settings, settings.commandServerUrl + baseUrl)
+            // Construct URL with page param
+            const urlObj = new URL(settings.baseHost + baseUrl);
+            urlObj.searchParams.set('page', page);
+            // Also preserve other existing params
+
+            // Use existing executeSingleRequest logic to fetch, but we need the raw result
+            // We can reuse executeSingleRequest but it updates UI.
+            // Better to make a direct fetch here or Refactor executeSingleRequest to be more reusable?
+            // User asked to "download all records changing only page in get request".
+
+            // Let's use fetch directly to avoid UI flickering for each page
+
+            // Prepare config similar to executeSingleRequest
+            const headers = {};
+            tabData.headers.forEach(header => {
+                if (header.key && header.value) headers[header.key] = header.value;
+            });
+            const config = {
+                method: tabData.method,
+                headers: headers
+            };
+
+            // Note: If BODY_METHODS involved, we might need body, but Pagination usually implies GET
+            // User specifically said "changing only page in get request".
+            const finalUrl = getFinalUrl(urlObj.toString());
+            const response = await fetch(finalUrl, config);
+
+            if (!response.ok) {
+                showNotification(`Error fetching page ${page}: ${response.statusText}`, 'error');
+                break;
+            }
+
+            const responseText = await response.text();
+            let parsedData;
+            try {
+                parsedData = JSON.parse(responseText);
+            } catch (e) {
+                showNotification(`Error parsing JSON on page ${page}`, 'error');
+                break;
+            }
+
+            if (Array.isArray(parsedData)) {
+                if (parsedData.length === 0) {
+                    // Empty page, stop
+                    break;
+                }
+                allRecords = allRecords.concat(parsedData);
+                page++;
+            } else if (parsedData && typeof parsedData === 'object' && Array.isArray(parsedData.results)) {
+                // Handle Django/DRF style { count: ..., results: [...] }
+                if (parsedData.results.length === 0) {
+                    break;
+                }
+                allRecords = allRecords.concat(parsedData.results);
+                // Check if there is next page
+                if (!parsedData.next) {
+                    stopDownloadFlag = true; // No next page
+                }
+                page++;
+            } else if (parsedData && typeof parsedData === 'object' && Array.isArray(parsedData.data)) {
+                // Handle { data: [...] } style
+                if (parsedData.data.length === 0) {
+                    break;
+                }
+                allRecords = allRecords.concat(parsedData.data);
+                page++;
+            } else {
+                // Not a list, maybe a single object at page 1?
+                // If we get an object on page 1, maybe wait for page 2?
+                // But usually pagination returns list.
+                // If it's a single object, we add it?
+                // User said "records" (plural).
+                // Let's assume if it is not an array, we stop.
+                if (page === 1) {
+                    showNotification('Response is not a list, cannot paginate.', 'warning');
+                }
+                break;
+            }
+
+            // Check if we retrieved fewer items than a "limit" implies?
+            // Hard to guess limit. Infinite loop protection?
+            if (page > 1000) {
+                if (!confirm('Reached 1000 pages. Continue?')) {
+                    break;
+                }
+            }
+        }
+    } catch (error) {
+        showNotification(`Download failed: ${error.message}`, 'error');
+    } finally {
+        toggleDownloadUI(false);
+        if (allRecords.length > 0) {
+            renderResponseTable(allRecords);
+            showNotification(`Fetched ${allRecords.length} records from ${page - 1} pages.`, 'success');
+            // Auto download CSV? User said "at the end download csv".
+            // So we trigger download.
+            // We need columns. renderResponseTable calculates columns.
+            // Let's construct columns here to download immediately.
+            const allKeys = new Set();
+            allRecords.forEach(item => {
+                if (typeof item === 'object' && item !== null) {
+                    Object.keys(item).forEach(key => allKeys.add(key));
+                }
+            });
+            const columns = Array.from(allKeys);
+            downloadCSV(allRecords, columns);
+        } else {
+            showNotification('No records found.', 'info');
+        }
+    }
+}
+
+function toggleDownloadUI(isDownloading) {
+    const downloadAllBtn = document.getElementById('download-all-btn');
+    const stopBtn = document.getElementById('stop-download-btn');
+    const progressEl = document.getElementById('download-progress');
+    const csvBtn = document.getElementById('download-csv-btn');
+
+    if (isDownloading) {
+        downloadAllBtn.classList.add('hidden');
+        stopBtn.classList.remove('hidden');
+        progressEl.classList.remove('hidden');
+        progressEl.textContent = 'Starting...';
+        csvBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        isDownloadingAll = true;
+    } else {
+        downloadAllBtn.classList.remove('hidden');
+        stopBtn.classList.add('hidden');
+        progressEl.classList.add('hidden');
+        csvBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        isDownloadingAll = false;
+    }
 }
 
 function setupWebSocketPanel() {

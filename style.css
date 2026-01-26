@@ -87,7 +87,8 @@ input {
     }
 
     .tab-content {
-        padding-bottom: 60px; /* Space for mobile nav */
+        padding-bottom: 60px;
+        /* Space for mobile nav */
     }
 
     .mobile-nav {
@@ -117,7 +118,8 @@ input {
     }
 
     .tab-content {
-        max-height: calc(100vh - 120px); /* Account for header and other elements */
+        max-height: calc(100vh - 120px);
+        /* Account for header and other elements */
     }
 }
 
@@ -134,7 +136,8 @@ input {
 /* WebSocket panel bottom padding */
 body.ws-panel-open #tabsContainer + .tab-content,
 body.ws-panel-open .tab-content:not(.hidden) {
-    margin-bottom: 300px !important; /* Account for WebSocket panel height */
+    margin-bottom: 300px !important;
+    /* Account for WebSocket panel height */
 }
 
 #websocket-messages-panel {
@@ -250,7 +253,10 @@ body {
     color: #1d1d1f;
 }
 
-input, select, textarea, button {
+input,
+select,
+textarea,
+button {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
     border-radius: 10px;
     border: 1px solid #d2d2d7;
@@ -259,7 +265,10 @@ input, select, textarea, button {
     transition: all 0.2s ease;
 }
 
-input:focus, select:focus, textarea:focus, button:focus {
+input:focus,
+select:focus,
+textarea:focus,
+button:focus {
     outline: none;
     box-shadow: 0 0 0 2px #007aff;
     border-color: #007aff;
@@ -468,6 +477,7 @@ button:active {
         transform: translateX(100%);
         opacity: 0;
     }
+
     to {
         transform: translateX(0);
         opacity: 1;
@@ -515,4 +525,62 @@ button:active {
 
 [class*="add-body-tab-"]:hover {
     background-color: #c6f6d5;
+}
+
+/* Response Table Panel */
+#response-table-panel {
+    background-color: #ffffff !important;
+    border-top: 1px solid #d2d2d7;
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.05);
+    z-index: 50;
+    /* Above normal content but below modals/overlays if needed */
+    transition: transform 0.3s ease-in-out;
+}
+
+#response-table-panel.hidden {
+    transform: translateY(100%);
+    display: block !important;
+    /* Override hidden class to allow transform animation, but move off-screen */
+}
+
+#response-table-content {
+    overflow-x: auto;
+}
+
+/* Add padding to tab content when response table is open */
+body:has(#response-table-panel:not(.hidden)) .tab-content:not(.hidden) {
+    /*padding-bottom: 340px !important;*/
+    /* Height of table panel (320px) + some extra space */
+}
+
+/* Table Styles */
+.response-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.response-table th,
+.response-table td {
+    padding: 8px 12px;
+    border: 1px solid #e2e8f0;
+    text-align: left;
+}
+
+.response-table th {
+    background-color: #f8fafc;
+    font-weight: 600;
+    color: #475569;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.response-table tr:nth-child(even) {
+    background-color: #f8fafc;
+}
+
+.response-table tr:hover {
+    background-color: #f1f5f9;
 }
