@@ -631,17 +631,38 @@ function renderTabContent(tabData) {
 function renderHeaders(container, headers, tabId) {
     container.innerHTML = '';
     headers.forEach((header, index) => {
+        // Ensure header has active property (default to true for existing headers)
+        if (header.active === undefined) {
+            header.active = true;
+        }
+
         const row = document.createElement('div');
-        row.className = 'flex gap-2';
+        row.className = 'flex gap-2 items-center';
         row.innerHTML = `
+          <input type="checkbox" ${header.active ? 'checked' : ''} class="w-4 h-4 cursor-pointer" title="Active" />
           <input type="text" placeholder="${t('emptyKeyPlaceholder')}" value="${header.key}" class="flex-1 px-2 py-1 border border-gray-300 rounded text-sm" />
-                    <input type="text" placeholder="${t('emptyValuePlaceholder')}" value="${header.value}" class="flex-1 px-2 py-1 border border-gray-300 rounded text-sm" />
+          <input type="text" placeholder="${t('emptyValuePlaceholder')}" value="${header.value}" class="flex-1 px-2 py-1 border border-gray-300 rounded text-sm" />
           <button class="w-7 h-7 flex items-center justify-center bg-red-100 text-red-500 rounded hover:bg-red-200 text-sm">×</button>
         `;
 
-        const keyInput = row.querySelector('input:first-child');
-        const valueInput = row.querySelector('input:last-of-type'); // второй input
+        const checkbox = row.querySelector('input[type="checkbox"]');
+        const keyInput = row.querySelectorAll('input[type="text"]')[0];
+        const valueInput = row.querySelectorAll('input[type="text"]')[1];
         const removeBtn = row.querySelector('button');
+
+        // Update row opacity based on active state
+        if (!header.active) {
+            keyInput.style.opacity = '0.5';
+            valueInput.style.opacity = '0.5';
+        }
+
+        checkbox.addEventListener('change', (e) => {
+            headers[index].active = e.target.checked;
+            updateTabData(tabId, {headers: [...headers]});
+            // Update visual state
+            keyInput.style.opacity = e.target.checked ? '1' : '0.5';
+            valueInput.style.opacity = e.target.checked ? '1' : '0.5';
+        });
 
         keyInput.addEventListener('input', debounce((e) => {
             headers[index].key = e.target.value;
@@ -1375,7 +1396,8 @@ async function executeSingleRequest(tabId, targetUrl, suffix = '') {
         // Подготовка заголовков
         const headers = {};
         tabData.headers.forEach(header => {
-            if (header.key && header.value) {
+            // Only include headers that are active
+            if (header.key && header.value && header.active !== false) {
                 headers[header.key] = header.value;
             }
         });
@@ -1550,10 +1572,11 @@ function formatResponseBody(body) {
     try {
         // Проверяем, является ли тело JSON
         const parsed = JSON.parse(body);
-        document.body.classList.add('ws-panel-open');
+
 
         // Check if it's an array for table view
         if (Array.isArray(parsed)) {
+            if (parsed.length) document.body.classList.add('ws-panel-open');
             renderResponseTable(parsed);
         } else {
             // Hide table if it's not an array
