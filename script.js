@@ -35,6 +35,9 @@ const TRANSLATIONS = {
         responseBody: "Тело ответа:",
         responseStatus: "Статус: ",
         timestamp: "Время: ",
+        downloadBtn: "Скачать",
+        downloadFile: "Скачать файл",
+        attachmentDetected: "Обнаружено вложение",
         confirmImport: "Вы уверены, что хотите заменить все текущие табы?\nБудет импортировано %d табов.%s",
         importSuccess: "Успешно импортировано %d табов!%s",
         importInvalidFormat: "Файл содержит некорректные данные. Ожидается массив табов или объект с полями tabs и settings.",
@@ -100,6 +103,9 @@ const TRANSLATIONS = {
         responseBody: "Response Body:",
         responseStatus: "Status: ",
         timestamp: "Time: ",
+        downloadBtn: "Download",
+        downloadFile: "Download File",
+        attachmentDetected: "Attachment detected",
         confirmImport: "Are you sure you want to replace all current tabs?\n%d tabs will be imported.%s",
         importSuccess: "Successfully imported %d tabs!%s",
         importInvalidFormat: "File contains invalid data. Expected an array of tabs or an object with tabs and settings fields.",
@@ -1435,14 +1441,66 @@ async function executeSingleRequest(tabId, targetUrl, suffix = '') {
 
         // Выполняем запрос
         const response = await fetch(finalUrl, config);
-        const responseBody = await response.text();
+        const blob = await response.blob();
+
+        const contentDisposition = response.headers.get('content-disposition') || '';
+        const contentType = response.headers.get('content-type') || '';
+        const isAttachment = contentDisposition.toLowerCase().includes('attachment');
+
+        // Check if response is binary
+        const isTextType = contentType.includes('text/') || 
+                           contentType.includes('json') || 
+                           contentType.includes('javascript') || 
+                           contentType.includes('xml');
+
+        let isBinary = false;
+        let responseBody = '';
+        let base64Body = null;
+        let attachmentName = null;
+
+        if (isAttachment) {
+            attachmentName = getFilenameFromContentDisposition(contentDisposition);
+            if (!attachmentName) {
+                // If content-disposition doesn't specify filename, try getting from URL
+                try {
+                    const parsedUrl = new URL(finalUrl);
+                    const pathParts = parsedUrl.pathname.split('/');
+                    const lastPart = pathParts[pathParts.length - 1];
+                    if (lastPart) {
+                        attachmentName = decodeURIComponent(lastPart);
+                    }
+                } catch (e) {
+                    // Ignore
+                }
+            }
+            if (!attachmentName) {
+                attachmentName = 'download';
+            }
+        }
+
+        if (isAttachment || !isTextType) {
+            isBinary = true;
+            // Convert to base64
+            base64Body = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+        } else {
+            responseBody = await blob.text();
+        }
 
         // Формируем результат
         const result = {
             statusCode: response.status,
             statusText: response.statusText,
             headers: Array.from(response.headers.entries()),
-            body: responseBody,
+            body: isBinary ? base64Body : responseBody,
+            isBinary: isBinary,
+            isAttachment: isAttachment,
+            attachmentName: attachmentName,
+            contentType: contentType,
             timestamp: new Date().toLocaleString()
         };
 
@@ -1531,6 +1589,50 @@ function updateResultsDisplay(tabId, result, status) {
             `;
     } else {
         // Форматируем успешный результат
+        let bodyHtml = '';
+        if (result.isBinary || result.isAttachment) {
+            bodyHtml = `
+                    <div class="flex items-center justify-between mb-2">
+                        <h4 class="font-bold text-gray-800">${t('responseBody')}</h4>
+                        <span class="text-xs px-2.5 py-0.5 bg-blue-100 text-blue-800 rounded-full font-semibold shadow-sm">${t('attachmentDetected')}</span>
+                    </div>
+                    <div class="p-6 bg-gradient-to-br from-gray-50 to-slate-100 rounded-xl border border-gray-200 flex flex-col items-center justify-center text-center space-y-4 my-4 shadow-sm">
+                        <div class="p-4 bg-blue-50 text-blue-600 rounded-full border border-blue-100">
+                            <svg class="w-10 h-10 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <h5 class="text-sm font-semibold text-gray-900 truncate max-w-xs px-2" title="${result.attachmentName || t('unnamed')}">
+                                ${result.attachmentName || t('unnamed')}
+                            </h5>
+                            <p class="text-xs text-gray-500 mt-1">
+                                ${result.contentType || 'application/octet-stream'}
+                            </p>
+                        </div>
+                        <button id="download-card-btn-${tabId}" class="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 focus:outline-none">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                            </svg>
+                            <span>${t('downloadFile')}</span>
+                        </button>
+                    </div>
+            `;
+        } else {
+            bodyHtml = `
+                    <div class="flex items-center justify-between mb-2">
+                        <h4 class="font-bold text-gray-800">${t('responseBody')}</h4>
+                        <button id="download-btn-${tabId}" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 rounded-lg shadow-sm hover:shadow transition-all duration-200 focus:outline-none">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                            </svg>
+                            <span>${t('downloadBtn')}</span>
+                        </button>
+                    </div>
+                    <pre class="bg-gray-100 p-4 rounded border max-h-96 overflow-y-auto whitespace-pre-wrap font-mono text-sm">${formatResponseBody(result.body)}</pre>
+            `;
+        }
+
         displayContent = `
                 <div class="mb-4">
                     <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
@@ -1558,13 +1660,37 @@ function updateResultsDisplay(tabId, result, status) {
                         </table>
                     </div>
 
-                    <h4 class="font-bold mb-2">${t('responseBody')}</h4>
-                    <pre class="bg-gray-100 p-4 rounded border max-h-96 overflow-y-auto whitespace-pre-wrap font-mono text-sm">${formatResponseBody(result.body)}</pre>
+                    ${bodyHtml}
                 </div>
             `;
     }
 
     resultsContainer.innerHTML = displayContent;
+
+    // Навешиваем обработчики событий для скачивания
+    if (status !== 'loading' && !result.error) {
+        const downloadBtn = document.getElementById(`download-btn-${tabId}`);
+        if (downloadBtn) {
+            downloadBtn.addEventListener('click', () => {
+                let extension = 'txt';
+                if (result.contentType && result.contentType.includes('json')) {
+                    extension = 'json';
+                } else if (result.contentType && result.contentType.includes('html')) {
+                    extension = 'html';
+                }
+                const filename = result.attachmentName || `response-${tabId}.${extension}`;
+                downloadResultFile(filename, result.body, result.contentType, result.isBinary);
+            });
+        }
+
+        const downloadCardBtn = document.getElementById(`download-card-btn-${tabId}`);
+        if (downloadCardBtn) {
+            downloadCardBtn.addEventListener('click', () => {
+                const filename = result.attachmentName || 'download';
+                downloadResultFile(filename, result.body, result.contentType, result.isBinary);
+            });
+        }
+    }
 }
 
 // === Форматирование тела ответа ===
@@ -2128,6 +2254,32 @@ function setupMobileNavigation() {
             mobileResponsePopup.style.display = 'none';
         }
     });
+
+    // Event delegation for mobile downloads
+    if (mobileResponseContent) {
+        mobileResponseContent.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-action="download-mobile"]');
+            if (btn && currentTabId) {
+                const tabData = tabs.find(t => t.id === currentTabId);
+                if (tabData && tabData.lastResult) {
+                    const result = tabData.lastResult;
+                    const isBinary = result.isBinary;
+                    const contentType = result.contentType;
+                    let filename = result.attachmentName;
+                    if (!filename) {
+                        let extension = 'txt';
+                        if (contentType && contentType.includes('json')) {
+                            extension = 'json';
+                        } else if (contentType && contentType.includes('html')) {
+                            extension = 'html';
+                        }
+                        filename = `response-${currentTabId}.${extension}`;
+                    }
+                    downloadResultFile(filename, result.body, contentType, isBinary);
+                }
+            }
+        });
+    }
 
     // Initialize active state for mobile nav buttons
     document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('active'));
@@ -2700,6 +2852,50 @@ function formatMobileResponse(result) {
                 </div>
             `;
     } else {
+        let bodyHtml = '';
+        if (result.isBinary || result.isAttachment) {
+            bodyHtml = `
+                    <div class="flex items-center justify-between mb-2">
+                        <h4 class="font-bold text-gray-800">${t('responseBody')}</h4>
+                        <span class="text-xs px-2.5 py-0.5 bg-blue-100 text-blue-800 rounded-full font-semibold shadow-sm">${t('attachmentDetected')}</span>
+                    </div>
+                    <div class="p-6 bg-gradient-to-br from-gray-50 to-slate-100 rounded-xl border border-gray-200 flex flex-col items-center justify-center text-center space-y-4 my-4 shadow-sm">
+                        <div class="p-4 bg-blue-50 text-blue-600 rounded-full border border-blue-100">
+                            <svg class="w-10 h-10 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <h5 class="text-sm font-semibold text-gray-900 truncate max-w-xs px-2" title="${result.attachmentName || t('unnamed')}">
+                                ${result.attachmentName || t('unnamed')}
+                            </h5>
+                            <p class="text-xs text-gray-500 mt-1">
+                                ${result.contentType || 'application/octet-stream'}
+                            </p>
+                        </div>
+                        <button data-action="download-mobile" class="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 focus:outline-none">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                            </svg>
+                            <span>${t('downloadFile')}</span>
+                        </button>
+                    </div>
+            `;
+        } else {
+            bodyHtml = `
+                    <div class="flex items-center justify-between mb-2">
+                        <h4 class="font-bold text-gray-800">${t('responseBody')}</h4>
+                        <button data-action="download-mobile" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 rounded-lg shadow-sm hover:shadow transition-all duration-200 focus:outline-none">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                            </svg>
+                            <span>${t('downloadBtn')}</span>
+                        </button>
+                    </div>
+                    <pre class="bg-gray-100 p-4 rounded border max-h-96 overflow-y-auto whitespace-pre-wrap font-mono text-sm">${formatResponseBody(result.body)}</pre>
+            `;
+        }
+
         return `
                 <div class="mb-4">
                     <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
@@ -2727,10 +2923,61 @@ function formatMobileResponse(result) {
                         </table>
                     </div>
 
-                    <h4 class="font-bold mb-2">${t('responseBody')}</h4>
-                    <pre class="bg-gray-100 p-4 rounded border max-h-96 overflow-y-auto whitespace-pre-wrap font-mono text-sm">${formatResponseBody(result.body)}</pre>
+                    ${bodyHtml}
                 </div>
             `;
     }
 }
+
+// === Вспомогательные функции для скачивания файлов ===
+function getFilenameFromContentDisposition(header) {
+    if (!header) return null;
+    const parts = header.split(';');
+    for (let part of parts) {
+        part = part.trim();
+        if (part.startsWith('filename*=')) {
+            const subparts = part.split("''");
+            if (subparts.length > 1) {
+                try {
+                    return decodeURIComponent(subparts[1]);
+                } catch (e) {
+                    return subparts[1];
+                }
+            }
+        } else if (part.startsWith('filename=')) {
+            let filename = part.substring(9);
+            if (filename.startsWith('"') && filename.endsWith('"')) {
+                filename = filename.slice(1, -1);
+            }
+            try {
+                return decodeURIComponent(filename);
+            } catch (e) {
+                return filename;
+            }
+        }
+    }
+    return null;
+}
+
+function downloadResultFile(filename, body, contentType, isBinary) {
+    let url;
+    if (isBinary && body && body.startsWith('data:')) {
+        url = body;
+    } else {
+        const blob = new Blob([body || ''], { type: contentType || 'application/octet-stream' });
+        url = URL.createObjectURL(blob);
+    }
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename || 'download';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    
+    if (!isBinary || !body || !body.startsWith('data:')) {
+        URL.revokeObjectURL(url);
+    }
+}
+
 

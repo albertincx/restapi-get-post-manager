@@ -36,7 +36,7 @@ This application provides a user-friendly interface for sending GET and POST req
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/restapi-get-post-manager.git
+   git clone https://github.com/albertincx/restapi-get-post-manager.git
    ```
 
 2. Navigate to the project directory:
