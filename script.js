@@ -20,8 +20,8 @@ const TRANSLATIONS = {
         cancelBtn: "Отмена",
         saveBtn: "Сохранить",
         settingsSaved: "Настройки сохранены!",
-        exportBtn: "Экспорт",
-        importBtn: "Импорт",
+        exportBtn: "Экспорт 📤",
+        importBtn: "Импорт 📥",
         settingsBtn: "Настройки",
         addTabTooltip: "Добавить новый таб",
         exportTooltip: "Экспорт всех табов",
@@ -48,6 +48,7 @@ const TRANSLATIONS = {
         deleteTab: "Удалить вкладку",
         confirmDeleteTab: "Вы уверены, что хотите удалить эту вкладку?",
         confirmDeleteBodyTab: "Вы уверены, что хотите удалить этот раздел тела запроса?",
+        doubleClickToRename: "Двойной клик для переименования",
         minimize: "[-]",
         maximize: "[+]",
         emptyKeyPlaceholder: "Ключ",
@@ -88,8 +89,8 @@ const TRANSLATIONS = {
         cancelBtn: "Cancel",
         saveBtn: "Save",
         settingsSaved: "Settings saved!",
-        exportBtn: "Export",
-        importBtn: "Import",
+        exportBtn: "Export 📤",
+        importBtn: "Import 📥",
         settingsBtn: "Settings",
         addTabTooltip: "Add new tab",
         exportTooltip: "Export all tabs",
@@ -116,6 +117,7 @@ const TRANSLATIONS = {
         deleteTab: "Delete tab",
         confirmDeleteTab: "Are you sure you want to delete this tab?",
         confirmDeleteBodyTab: "Are you sure you want to delete this body tab?",
+        doubleClickToRename: "Double click to rename",
         minimize: "[-]",
         maximize: "[+]",
         emptyKeyPlaceholder: "Key",
@@ -166,9 +168,9 @@ function updateLanguage() {
     });
 
     // Обновляем кнопки в верхней панели (если они уже созданы)
-    const exportBtn = document.querySelector('#tabsContainer button:nth-last-child(3)');
-    const importBtn = document.querySelector('#tabsContainer button:nth-last-child(2)');
-    const settingsBtn = document.querySelector('#tabsContainer button:last-child');
+    const exportBtn = document.getElementById('export-btn');
+    const importBtn = document.getElementById('import-btn');
+    const settingsBtn = document.getElementById('settings-btn');
 
     if (exportBtn) exportBtn.textContent = t('exportBtn');
     if (importBtn) importBtn.textContent = t('importBtn');
@@ -453,15 +455,16 @@ function renderTabContent(tabData) {
     bodyGroup.innerHTML = `
         <label class="block font-bold text-sm mb-2">${t('bodyLabel')}</label>
         <div class="flex mb-2">
-            <div id="body-tabs-${tabData.id}" class="flex flex-wrap gap-1 mr-2">
+            <div id="body-tabs-${tabData.id}" class="flex flex-wrap gap-1 mr-2 animate-fade-in">
                 ${tabData.bodyTabs.map((tab, index) => `
-                    <div class="body-tab ${tab.id === tabData.activeBodyTabId ? 'active' : ''} px-2 py-1 border rounded text-sm cursor-pointer ${tab.id === tabData.activeBodyTabId ? 'bg-blue-100 border-blue-300' : 'bg-gray-100 border-gray-300'}"
+                    <div class="body-tab ${tab.id === tabData.activeBodyTabId ? 'active' : ''} px-2 py-1 border rounded text-sm cursor-pointer ${tab.id === tabData.activeBodyTabId ? 'bg-blue-100 border-blue-300' : 'bg-gray-100 border-gray-300'} flex items-center transition-all duration-200 hover:shadow-sm"
                          data-tab-id="${tab.id}">
-                        <span class="body-tab-name">${tab.name}</span>
-                        ${tabData.bodyTabs.length > 1 ? `<span class="body-tab-close ml-1 text-red-500">×</span>` : ''}
+                        <span class="body-tab-name select-none font-medium">${tab.name}</span>
+                        <span class="body-tab-rename ml-1.5 text-gray-500 hover:text-blue-500 transition-colors" title="${t('renameTab')}">✏️</span>
+                        ${tabData.bodyTabs.length > 1 ? `<span class="body-tab-close ml-1 text-red-500 hover:bg-red-100 rounded-full w-4 h-4 flex items-center justify-center transition-colors">×</span>` : ''}
                     </div>
                 `).join('')}
-                <button id="add-body-tab-${tabData.id}" class="px-2 py-1 bg-green-100 text-green-700 rounded text-sm border border-green-300 hover:bg-green-200">+</button>
+                <button id="add-body-tab-${tabData.id}" class="px-2 py-1 bg-green-100 text-green-700 rounded text-sm border border-green-300 hover:bg-green-200 transition-colors">+</button>
             </div>
         </div>
         <textarea id="body-${tabData.id}" ${!isBodyAllowed ? 'disabled' : ''} class="w-full px-3 py-2 border ${isBodyAllowed ? 'border-gray-300' : 'border-gray-200 bg-gray-100'} rounded font-mono min-h-[120px]">${activeBodyTab ? activeBodyTab.content : ''}</textarea>
@@ -559,10 +562,46 @@ function renderTabContent(tabData) {
     // Add event listeners for body tabs
     const bodyTabsContainer = requestPanel.querySelector(`#body-tabs-${tabData.id}`);
     if (bodyTabsContainer) {
-        // console.log('console.log(e.target);');
-        // Add click event for switching body tabs
+        // Add click event for switching and managing body tabs
         bodyTabsContainer.addEventListener('click', (e) => {
-            let isClose = e.target.classList.contains('body-tab-close')
+            let isClose = e.target.classList.contains('body-tab-close');
+            let isRename = e.target.classList.contains('body-tab-rename') || e.target.closest('.body-tab-rename');
+
+            // Handle tab renaming
+            if (isRename) {
+                e.stopPropagation();
+                const tabElement = e.target.closest('.body-tab');
+                if (tabElement) {
+                    const tabId = parseInt(tabElement.dataset.tabId);
+                    if (!isNaN(tabId)) {
+                        const tab = tabs.find(t => t.id === tabData.id);
+                        if (tab) {
+                            const bodyTab = tab.bodyTabs.find(bt => bt.id === tabId);
+                            if (bodyTab) {
+                                const newName = prompt(t('renameTab'), bodyTab.name);
+                                if (newName !== null) {
+                                    const cleanedName = newName.trim() || `Body ${tabId}`;
+                                    bodyTab.name = cleanedName;
+
+                                    // Sync the latest body textarea content first to avoid losing current typing due to debounce
+                                    const currentTextarea = requestPanel.querySelector(`#body-${tabData.id}`);
+                                    if (currentTextarea) {
+                                        const activeTab = tab.bodyTabs.find(bt => bt.id === tab.activeBodyTabId);
+                                        if (activeTab) {
+                                            activeTab.content = currentTextarea.value;
+                                        }
+                                    }
+
+                                    updateTabData(tabData.id, {bodyTabs: tab.bodyTabs});
+                                    renderTabContentFresh(tabData.id);
+                                }
+                            }
+                        }
+                    }
+                }
+                return;
+            }
+
             // Handle tab switching
             const tabElement = e.target.closest('.body-tab');
             if (tabElement && !isClose) {
@@ -1731,6 +1770,7 @@ function init() {
     // Кнопка экспорта
     const exportButton = document.createElement('button');
     const btnDiv = document.createElement('div');
+    exportButton.id = 'export-btn';
     exportButton.className = 'px-3 py-2 ml-2 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
     exportButton.textContent = t('exportBtn');
     exportButton.title = t('exportTooltip');
@@ -1740,6 +1780,7 @@ function init() {
 
     // Кнопка импорта
     const importButton = document.createElement('button');
+    importButton.id = 'import-btn';
     importButton.className = 'px-3 py-2 ml-3 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
     importButton.textContent = '' + t('importBtn');
     importButton.title = t('importTooltip');
@@ -1749,6 +1790,7 @@ function init() {
 
     // Кнопка настроек
     const settingsButton = document.createElement('button');
+    settingsButton.id = 'settings-btn';
     settingsButton.className = 'px-3 py-2 ml-1 text-gray-600 hover:bg-gray-300 rounded border border-gray-300 text-sm';
     settingsButton.innerHTML = '⚙️'; // Gear icon
     settingsButton.title = t('settingsTooltip');

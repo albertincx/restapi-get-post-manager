@@ -584,3 +584,7 @@ body:has(#response-table-panel:not(.hidden)) .tab-content:not(.hidden) {
 .response-table tr:hover {
     background-color: #f1f5f9;
 }
+
+#export-btn,#import-btn {
+    white-space: nowrap;
+}
